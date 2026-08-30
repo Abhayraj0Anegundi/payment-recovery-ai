@@ -1,12 +1,15 @@
+import { useEffect, useRef, useState } from 'react'
 import { CAUSE_LABELS, CAUSE_COLORS, STATUS_COLUMNS, formatAmount } from '../constants'
 
-function TransactionCard({ txn, onClick, highlight }) {
+function TransactionCard({ txn, onClick, highlight, justChanged }) {
   return (
     <button
       onClick={() => onClick(txn.id)}
-      className={`w-full text-left bg-white border rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer ${
-        highlight ? 'border-rose-300 ring-2 ring-rose-200' : 'border-slate-200'
-      }`}
+      className={`w-full text-left border rounded-lg p-3 hover:shadow-md cursor-pointer
+        transition-all duration-700 ease-out
+        ${highlight ? 'border-rose-300 ring-2 ring-rose-200 bg-white' : 'border-slate-200'}
+        ${justChanged ? 'animate-card-arrive ring-2 ring-indigo-300' : !highlight ? 'bg-white' : ''}
+      `}
     >
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-xs font-mono text-slate-400">#{txn.id}</span>
@@ -37,6 +40,31 @@ function TransactionCard({ txn, onClick, highlight }) {
 }
 
 export default function KanbanBoard({ transactions, onSelect, pinnedNeedsHumanId }) {
+  // Track which transaction ids changed status (or are brand new) since the
+  // last render, so their card can briefly highlight where it landed —
+  // makes a Live Demo transaction visibly "arrive" in its column instead of
+  // silently appearing on the next data refresh.
+  const [justChangedIds, setJustChangedIds] = useState(new Set())
+  const prevStatusById = useRef(new Map())
+
+  useEffect(() => {
+    const prev = prevStatusById.current
+    const changed = new Set()
+    for (const t of transactions) {
+      const prevStatus = prev.get(t.id)
+      if (prevStatus !== undefined && prevStatus !== t.status) {
+        changed.add(t.id)
+      }
+    }
+    if (changed.size > 0) {
+      setJustChangedIds(changed)
+      const timer = setTimeout(() => setJustChangedIds(new Set()), 1500)
+      prevStatusById.current = new Map(transactions.map((t) => [t.id, t.status]))
+      return () => clearTimeout(timer)
+    }
+    prevStatusById.current = new Map(transactions.map((t) => [t.id, t.status]))
+  }, [transactions])
+
   const byStatus = STATUS_COLUMNS.reduce((acc, col) => {
     acc[col.key] = transactions.filter((t) => t.status === col.key)
     return acc
@@ -51,7 +79,13 @@ export default function KanbanBoard({ transactions, onSelect, pinnedNeedsHumanId
             <div className={`bg-white border border-slate-200 border-t-4 ${col.accent} rounded-xl p-3 h-full`}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-slate-700">{col.label}</h3>
-                <span className="text-xs font-medium bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
+                <span
+                  className={`text-xs font-medium rounded-full px-2 py-0.5 transition-colors duration-300 ${
+                    items.some((t) => justChangedIds.has(t.id))
+                      ? 'bg-indigo-100 text-indigo-700'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
                   {items.length}
                 </span>
               </div>
@@ -65,6 +99,7 @@ export default function KanbanBoard({ transactions, onSelect, pinnedNeedsHumanId
                     txn={txn}
                     onClick={onSelect}
                     highlight={txn.id === pinnedNeedsHumanId}
+                    justChanged={justChangedIds.has(txn.id)}
                   />
                 ))}
               </div>

@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { simulateFreshActivity } from './simulateActivity'
 import MetricsHeader from './components/MetricsHeader'
 import CauseBreakdownTable from './components/CauseBreakdownTable'
+import AdaptiveInsight from './components/AdaptiveInsight'
 import SystemGuarantees from './components/SystemGuarantees'
 import MessageShowcase from './components/MessageShowcase'
+import LiveDemo from './components/LiveDemo'
 import KanbanBoard from './components/KanbanBoard'
 import TransactionDetailModal from './components/TransactionDetailModal'
 
@@ -11,25 +14,30 @@ function App() {
   const [transactions, setTransactions] = useState([])
   const [summary, setSummary] = useState(null)
   const [byCause, setByCause] = useState(null)
+  const [insight, setInsight] = useState(null)
   const [guarantees, setGuarantees] = useState(null)
   const [showcase, setShowcase] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [simulating, setSimulating] = useState(false)
+  const [lastSimCount, setLastSimCount] = useState(null)
   const [error, setError] = useState(null)
   const [lastLoaded, setLastLoaded] = useState(null)
 
   async function loadAll() {
     try {
-      const [txns, sum, cause, guar, show] = await Promise.all([
+      const [txns, sum, cause, ins, guar, show] = await Promise.all([
         api.transactions(),
         api.metricsSummary(),
         api.metricsByCause(),
+        api.adaptiveInsight(),
         api.systemGuarantees(),
         api.messagesShowcase(),
       ])
       setTransactions(txns)
       setSummary(sum)
       setByCause(cause)
+      setInsight(ins)
       setGuarantees(guar)
       setShowcase(show)
       setError(null)
@@ -44,6 +52,18 @@ function App() {
   useEffect(() => {
     loadAll()
   }, [])
+
+  async function refreshWithSimulatedActivity() {
+    setSimulating(true)
+    setLastSimCount(null)
+    try {
+      const succeeded = await simulateFreshActivity()
+      setLastSimCount(succeeded)
+    } finally {
+      setSimulating(false)
+      await loadAll()
+    }
+  }
 
   const needsHumanTxns = transactions.filter((t) => t.status === 'needs_human')
   // Prefer an insufficient_funds case for the pinned example — it has the
@@ -64,16 +84,28 @@ function App() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {lastSimCount !== null && !simulating && (
+              <span className="text-xs font-medium text-emerald-600 animate-card-arrive">
+                +{lastSimCount} new transaction{lastSimCount === 1 ? '' : 's'} processed
+              </span>
+            )}
             {lastLoaded && (
               <span className="text-xs text-slate-400">
                 Live from SQLite · {lastLoaded.toLocaleTimeString()}
               </span>
             )}
             <button
-              onClick={loadAll}
-              className="text-sm font-medium bg-slate-900 text-white rounded-lg px-4 py-2 hover:bg-slate-700"
+              onClick={refreshWithSimulatedActivity}
+              disabled={simulating}
+              className="text-sm font-medium bg-slate-900 text-white rounded-lg px-4 py-2 hover:bg-slate-700 disabled:opacity-70 inline-flex items-center gap-2"
             >
-              Refresh
+              {simulating && (
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+              )}
+              {simulating ? 'Processing new payments…' : 'Refresh'}
             </button>
           </div>
         </div>
@@ -89,11 +121,15 @@ function App() {
 
         {!loading && !error && (
           <>
+            <LiveDemo onResolved={loadAll} />
+
             <MetricsHeader summary={summary} />
 
             <SystemGuarantees guarantees={guarantees} />
 
             <CauseBreakdownTable byCause={byCause} />
+
+            <AdaptiveInsight insight={insight} />
 
             <MessageShowcase messages={showcase} />
 

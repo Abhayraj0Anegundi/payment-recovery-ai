@@ -100,6 +100,54 @@ that attempt (there's no point nudging a customer you're escalating away from).
 
 ---
 
+## Live demo mode — not just a batch report
+
+Everything above runs as a batch script against seeded data. To prove this is actual
+event-driven logic and not a one-off report generator, the dashboard also has a **Live
+Demo** panel that triggers the real pipeline on a brand-new transaction, live, in the
+browser:
+
+1. Pick a failure scenario and click "Trigger a real failed payment." This POSTs to
+   `/api/webhook/payment-failed` — shaped like a real Razorpay `payment.failed` webhook
+   — which creates a new transaction row and runs attempt 1 through the *exact same*
+   `pipeline.process_one_attempt()` function the batch runs use: real rule/LLM
+   classification, a real Razorpay test-mode Payment Link, a real Gemini-generated
+   Hinglish message. Nothing here is pre-computed or read from `recovery.db`.
+2. Click "Customer ignored" / "Promise to pay" / "Customer paid" to simulate what
+   happens next. This calls `/api/transactions/<id>/respond`, which runs
+   `pipeline.record_customer_response()` — the same function the batch pipeline calls.
+   If ignored and attempts remain, the next attempt starts automatically and you watch a
+   second real decision, link, and message appear live.
+3. The whole thing is subject to the identical hard 3-attempt cap and fixed decision
+   table as every other transaction — click "Customer ignored" three times on the same
+   demo transaction and it escalates to `needs_human` for real, in front of you.
+
+There is no separate "demo mode" code path — `api.py`'s two write endpoints
+(`/api/webhook/payment-failed`, `/api/transactions/<id>/respond`) are thin wrappers
+around the same `process_one_attempt` / `record_customer_response` functions
+`pipeline.py`'s batch loop calls internally. A transaction created this way lives in the
+same `transactions` table, gets the same audit trail, and shows up in the same kanban
+board as everything else.
+
+### Live traffic simulation on Refresh
+
+The dashboard's **Refresh** button doesn't just re-read `recovery.db` — it first fires
+2-3 *real* transactions through the exact same webhook + response pipeline described
+above (`frontend/src/simulateActivity.js`), using randomized synthetic customers and
+scenarios, then reloads. This is intentional: it makes the dashboard feel like a system
+with ongoing traffic instead of a static report, and it is not faked — every one of
+those transactions is a real classify → decide → Gemini message → Razorpay-or-mocked
+link → simulated customer response, written to the same audit trail as everything else.
+
+**Consequence, stated plainly**: the transaction count is not frozen at 91 — it grows by
+2-3 every time Refresh is clicked. The "Honest results" table below reflects the state
+*as originally documented*; the live dashboard will show a higher, still-honestly-computed
+total the moment anyone clicks Refresh. If you want to reproduce the exact documented
+numbers, don't click Refresh — the API returns the current live state on page load
+without it, and the numbers below match that initial state.
+
+---
+
 ## Running it
 
 ### 1. Backend setup
@@ -175,21 +223,25 @@ py -3 api.py --db recovery_real.db --port 5001
 
 ## Honest results — the actual run, not a cherry-picked one
 
-**90/90 seeded transactions processed** through the real pipeline. Metrics below are
-pulled live from `GET /api/metrics/summary` and `/api/metrics/by-cause` against the
-committed `recovery.db` — reproducible by running the dashboard yourself.
+**90 seeded transactions processed** through the real pipeline in the original batch run,
+**plus 1 additional transaction (#96)** added afterward via the dashboard's own Live Demo
+"build your own scenario" form (see below) and resolved through the same real pipeline —
+91 total. Metrics below are pulled live from `GET /api/metrics/summary` and
+`/api/metrics/by-cause` against the committed `recovery.db` — reproducible by running the
+dashboard yourself, and they will keep changing slightly if you trigger more Live Demo
+transactions against this same file, which is expected: they're computed live, not frozen.
 
 | Metric | Value |
 |---|---|
-| Total transactions | 90 |
-| Recovered | 56 (62.2%) |
+| Total transactions | 91 |
+| Recovered | 57 (62.6%) |
 | Promise to pay | 23 |
 | Needs human (escalated) | **11** |
 | Avg attempts to recovery | 1.25 |
 | Root-cause classifications via rule table | 117 |
-| Root-cause classifications via LLM (ambiguous `other` cases) | 12 |
+| Root-cause classifications via LLM (ambiguous `other` cases) | 13 |
 | LLM message-generation fallback triggers | 0 (every Hinglish message parsed cleanly) |
-| `audit_log` rows | 822 |
+| `audit_log` rows | 830 |
 
 **Per-cause breakdown** (computed live, not hand-picked — note the real variance,
 consistent with the intended weighting that bank-side transient failures recover more
@@ -197,13 +249,22 @@ easily than low-balance ones):
 
 | Root cause | Total | Recovered | Promise | Needs Human | Recovery % |
 |---|---|---|---|---|---|
-| Bank Timeout | 25 | 19 | 4 | 2 | **76.0%** |
+| Bank Timeout | 26 | 20 | 4 | 2 | **76.9%** |
 | 3DS Dropoff | 22 | 15 | 5 | 2 | 68.2% |
 | Card Declined | 22 | 14 | 5 | 3 | 63.6% |
 | Insufficient Funds | 21 | 8 | 9 | 4 | **38.1%** |
 
 11 transactions genuinely reached `needs_human` after exhausting all 3 attempts — this
 is visible and pinned in the dashboard, not a hypothetical.
+
+**Transaction #96 is worth calling out specifically**: it was created by typing
+`"idk what happened"` as a gateway note under the ambiguous `other` failure code — a
+deliberate stress test of the LLM classification path with a genuinely uninformative
+input. The LLM still forced a decision into one of the 4 fixed causes rather than
+inventing a 5th or hedging: *"Since the gateway note is uninformative, bank_timeout is
+chosen as the closest default for unexplained transaction drops."* This is the
+classification prompt's forbid-a-5th-label constraint working exactly as designed under
+adversarial input, not just clean seeded data.
 
 ---
 
@@ -223,22 +284,22 @@ customer/amount data. This proves the integration is real and working end to end
 
 Once the account's 30-link cap was hit mid-run, the pipeline automatically and
 **transparently** switched to a disclosed mock-link fallback
-(`razorpay_client.py::mock_payment_link`) for the remaining 112 payment-link-requiring
-attempts, so the full 90-transaction batch could complete and every dashboard column
-(including `needs_human`) could be demonstrated. Every single mocked link has its own
-`audit_log` row (`action='payment_link_mocked'` or `'razorpay_quota_exhausted'`)
-explaining exactly why — nowhere in the data is a mock link presented as, or confused
-with, a real one. This is the one deliberate, fully-disclosed deviation from "real links
-for every transaction," made necessary by an external account limit rather than a
-pipeline shortcut.
+(`razorpay_client.py::mock_payment_link`) for the remaining payment-link-requiring
+attempts, so the full batch could complete and every dashboard column (including
+`needs_human`) could be demonstrated. Every single mocked link has its own `audit_log`
+row (`action='payment_link_mocked'` or `'razorpay_quota_exhausted'`) explaining exactly
+why — nowhere in the data is a mock link presented as, or confused with, a real one. This
+is the one deliberate, fully-disclosed deviation from "real links for every transaction,"
+made necessary by an external account limit rather than a pipeline shortcut.
 
 ```sql
--- verify for yourself:
+-- verify for yourself (exact counts will grow if you trigger more Live Demo
+-- transactions against this file — this query always reflects the current state):
 SELECT action, COUNT(*) FROM audit_log
 WHERE action IN ('create_payment_link','payment_link_mocked')
 GROUP BY action;
 -- create_payment_link | 6
--- payment_link_mocked | 112
+-- payment_link_mocked | 113
 ```
 
 ### A second, 100%-real batch (`recovery_real.db`)
@@ -280,6 +341,30 @@ batch) — same API, same frontend, just point it at the DB you want to show.
 
 ---
 
+## What the outcome data suggests — an honest note on "does this learn?"
+
+The strategy table is deliberately fixed and never LLM-chosen (see above) — that's a
+trust and auditability decision, not an oversight, and it means the pipeline itself does
+not adapt between transaction #1 and #91. But it does log a real outcome for every
+attempt, and that data already contains a genuine, checkable signal:
+
+```
+GET /api/metrics/adaptive-insight
+```
+
+computes, live, the recovery rate per root cause and surfaces the gap directly:
+**`insufficient_funds` recovers at 38.1% vs `bank_timeout` at 76.9%** — a real ~39-point
+difference visible in `recovery.db` today, not a hypothetical. The endpoint (and the
+matching dashboard panel) is explicit that this is a **computed observation, not a
+trained model** — the pipeline does not act on it automatically. It exists to make one
+concrete claim: the audit trail this system already writes is sufficient to drive a
+genuinely adaptive v2 (e.g. per-cause timing changes — delay the `insufficient_funds`
+reminder instead of sending it immediately) without touching the fixed decision table's
+auditability. Which fixed strategy applies could become data-driven; whether an LLM gets
+to invent a new one never does.
+
+---
+
 ## Data model
 
 See [`backend/schema.sql`](backend/schema.sql) for the full DDL. Five tables:
@@ -299,8 +384,9 @@ backend/
   gemini_client.py     — the 2 narrow Gemini prompts + JSON parsing/fallback
   razorpay_client.py   — real Payment Link creation + disclosed mock fallback
   pipeline.py          — batch orchestrator, 3-attempt loop, audit logging
-  api.py               — read-only Flask API, all metrics computed live
-  recovery.db          — full 90-txn batch (6 real + 112 disclosed-mock links)
+  api.py               — Flask API; metrics endpoints read-only, plus 2 write
+                          endpoints for the Live Demo (real webhook + response)
+  recovery.db          — full ~90-txn batch (6 real + 113 disclosed-mock links)
   recovery_real.db     — 18-txn batch, 24/24 links genuinely real, 0 mocked
 frontend/
   src/
@@ -336,8 +422,9 @@ py -3 api.py --db recovery.db --host 0.0.0.0 --port 5001
 
 ## Two demo artifacts, two different stories
 
-- **`recovery.db`** — the full 90-transaction batch, computed with honest metrics at
-  real scale. 6 real links + 112 disclosed mocks (see above). This is the number to cite
+- **`recovery.db`** — the full ~90-transaction batch, computed with honest metrics at
+  real scale (90 from the original seeded run, plus any Live Demo transactions triggered
+  since). 6 real links + the rest disclosed mocks (see above). This is the number to cite
   for "recovery rate," "per-cause breakdown," and "avg attempts to recovery" — it's the
   one with enough volume for those to mean something statistically.
 - **`recovery_real.db`** — an 18-transaction batch where literally every payment link is

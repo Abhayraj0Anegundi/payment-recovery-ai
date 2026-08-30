@@ -1,20 +1,29 @@
 """
-Read-only JSON API over recovery.db for the React dashboard.
+JSON API over recovery.db for the React dashboard.
 
-Every metric is computed live from SQLite on each request — nothing is
-cached, precomputed, or fabricated (constraint #6). No writes happen here;
-this process only ever runs SELECT queries.
+All /api/metrics/*, /api/transactions* GET endpoints are strictly
+read-only — every metric is computed live from SQLite on each request,
+nothing cached or fabricated (constraint #6).
+
+Two endpoints are the exception, added specifically for a live demo:
+/api/webhook/payment-failed and /api/transactions/<id>/respond. These run
+the SAME pipeline.py functions used by the batch runs (process_one_attempt,
+record_customer_response) — no separate "demo" logic, no shortcuts. See
+their docstrings below.
 
 Usage:
-    py -3 api.py [--db PATH] [--port PORT]
+    py -3 api.py [--db PATH] [--port PORT] [--host HOST]
 """
 
 import argparse
+import random
 import sqlite3
 from pathlib import Path
 
-from flask import Flask, jsonify, g
+from flask import Flask, jsonify, g, request
 from flask_cors import CORS
+
+import pipeline
 
 BACKEND_DIR = Path(__file__).parent
 DEFAULT_DB_PATH = BACKEND_DIR / "recovery.db"
@@ -71,10 +80,140 @@ def transactions():
 def transaction_detail(txn_id):
     """Full detail for one transaction: decisions, messages, outcomes, audit trail."""
     db = get_db()
-    txn = db.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
-    if txn is None:
+    exists = db.execute("SELECT 1 FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+    if exists is None:
         return jsonify({"error": "not found"}), 404
+    return jsonify(_load_transaction_detail(db, txn_id))
 
+
+# ---------------------------------------------------------------------------
+# Live demo — a real failed-payment event and a customer's response to it.
+#
+# These two endpoints call the exact same pipeline.py functions the batch
+# runs use (process_one_attempt, record_customer_response). There is no
+# separate "demo mode" logic — a webhook-triggered transaction is written
+# to the same tables, gets the same audit trail, and is subject to the same
+# 3-attempt cap and fixed decision table as every transaction in
+# recovery.db / recovery_real.db.
+# ---------------------------------------------------------------------------
+
+_VALID_FAILURE_CODES = {"insufficient_funds", "bank_timeout", "3ds_dropoff", "card_declined", "other"}
+_VALID_METHODS = {"card", "upi", "netbanking"}
+
+
+@app.route("/api/webhook/payment-failed", methods=["POST"])
+def webhook_payment_failed():
+    """
+    Accepts a payment.failed event and runs attempt 1 of the real pipeline
+    on it, live. Two payload shapes are accepted:
+
+    1. Simplified (what the dashboard's "Trigger Live Demo" button sends):
+       {"customer_name": "...", "customer_phone": "...", "amount": 149900,
+        "currency": "INR", "razorpay_failure_code": "bank_timeout",
+        "failure_note": null, "original_payment_method": "card"}
+
+    2. Razorpay-shaped (what a real webhook subscription would send) —
+       unwrapped from payload.payment.entity before being processed the
+       same way. Only the fields this pipeline needs are read; anything
+       else in the real Razorpay payload is ignored.
+    """
+    body = request.get_json(silent=True) or {}
+
+    # Unwrap a Razorpay-shaped webhook if that's what was sent.
+    entity = body.get("payload", {}).get("payment", {}).get("entity")
+    source = entity if entity else body
+
+    customer_name = source.get("customer_name") or source.get("notes", {}).get("customer_name") or "Live Demo Customer"
+    customer_phone = str(source.get("customer_phone") or source.get("contact") or "9999999999")
+    amount = source.get("amount")
+    currency = source.get("currency", "INR")
+    failure_code = source.get("razorpay_failure_code") or source.get("error_code") or "other"
+    failure_note = source.get("failure_note") or source.get("error_description")
+    method = source.get("original_payment_method") or source.get("method") or "card"
+
+    if not isinstance(amount, int) or amount <= 0:
+        return jsonify({"error": "amount (integer, paise) is required"}), 400
+    if failure_code not in _VALID_FAILURE_CODES:
+        failure_code = "other"
+        failure_note = failure_note or f"Unrecognized gateway code, treated as ambiguous."
+    if method not in _VALID_METHODS:
+        method = "card"
+
+    db = get_db()
+    with db:
+        cur = db.execute(
+            """INSERT INTO transactions
+               (customer_name, customer_phone, amount, currency,
+                razorpay_failure_code, failure_note, original_payment_method)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (customer_name, customer_phone, amount, currency, failure_code, failure_note, method),
+        )
+        txn_id = cur.lastrowid
+        db.execute(
+            "INSERT INTO audit_log (transaction_id, actor, action, reasoning_string) VALUES (?, ?, ?, ?)",
+            (txn_id, "system", "webhook_received",
+             f"Received payment.failed webhook: failure_code='{failure_code}', amount={amount}, method='{method}'."),
+        )
+
+    txn = dict(db.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone())
+
+    try:
+        terminal = pipeline.process_one_attempt(db, txn, attempt_number=1)
+    except Exception as e:
+        return jsonify({"error": f"pipeline error: {e}", "transaction_id": txn_id}), 500
+
+    detail = _load_transaction_detail(db, txn_id)
+    detail["terminal_on_attempt_1"] = terminal
+    return jsonify(detail), 201
+
+
+@app.route("/api/transactions/<int:txn_id>/respond", methods=["POST"])
+def trigger_customer_response(txn_id):
+    """
+    Records a customer response to the most recent attempt and, if the
+    transaction isn't resolved and hasn't hit the 3-attempt cap, immediately
+    runs the next attempt too — so a presenter can click "customer ignored"
+    repeatedly and watch the real retry loop advance live.
+
+    Body: {"response": "paid" | "ignored" | "promise_to_pay"}
+    """
+    body = request.get_json(silent=True) or {}
+    response = body.get("response")
+    if response not in ("paid", "ignored", "promise_to_pay"):
+        return jsonify({"error": "response must be one of paid/ignored/promise_to_pay"}), 400
+
+    db = get_db()
+    txn_row = db.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+    if txn_row is None:
+        return jsonify({"error": "not found"}), 404
+    txn = dict(txn_row)
+
+    if txn["status"] != "contacted":
+        return jsonify({
+            "error": f"transaction is in status '{txn['status']}', not awaiting a response "
+                     "(it must have an unresolved message sent — status 'contacted' — before "
+                     "recording a customer response)"
+        }), 400
+
+    attempt_number = txn["attempt_count"]
+    resolved = pipeline.record_customer_response(db, txn_id, attempt_number, response)
+
+    next_attempt_started = False
+    if not resolved and attempt_number < 3:
+        # ignored, and attempts remain — run the next attempt immediately so
+        # the retry loop is visible in one click, same as the batch pipeline
+        # does automatically.
+        pipeline.process_one_attempt(db, txn, attempt_number=attempt_number + 1)
+        next_attempt_started = True
+
+    detail = _load_transaction_detail(db, txn_id)
+    detail["resolved"] = resolved
+    detail["next_attempt_started"] = next_attempt_started
+    return jsonify(detail)
+
+
+def _load_transaction_detail(db, txn_id):
+    txn = db.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
     decisions = db.execute(
         "SELECT * FROM decisions WHERE transaction_id = ? ORDER BY attempt_number", (txn_id,)
     ).fetchall()
@@ -87,14 +226,13 @@ def transaction_detail(txn_id):
     audit = db.execute(
         "SELECT * FROM audit_log WHERE transaction_id = ? ORDER BY id", (txn_id,)
     ).fetchall()
-
-    return jsonify({
+    return {
         "transaction": dict(txn),
         "decisions": [dict(r) for r in decisions],
         "messages": [dict(r) for r in messages],
         "outcomes": [dict(r) for r in outcomes],
         "audit_log": [dict(r) for r in audit],
-    })
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +400,103 @@ def system_guarantees():
             "escalations_not_at_attempt_3": escalations_not_at_3,
         },
         "audit_log_rows": total_audit_rows,
+    })
+
+
+@app.route("/api/metrics/adaptive-insight")
+def adaptive_insight():
+    """
+    Derives a real, honest signal from the per-cause recovery data already
+    computed by /api/metrics/by-cause — NOT a learned model, and the pipeline
+    does not act on this automatically. This exists to make an explicit,
+    verifiable claim: "here is a concrete pattern in the outcome data this
+    system already logs, and here is the specific strategy change it
+    suggests" — as a labeled next step, not a hidden decision.
+
+    Every number returned is a live SQL aggregate over transactions +
+    decisions; nothing here is hardcoded or precomputed offline.
+    """
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT
+            latest.root_cause AS cause,
+            COUNT(*) AS total,
+            SUM(CASE WHEN t.status = 'recovered' THEN 1 ELSE 0 END) AS recovered,
+            AVG(t.attempt_count) AS avg_attempts
+        FROM transactions t
+        JOIN (
+            SELECT d1.transaction_id, d1.root_cause
+            FROM decisions d1
+            INNER JOIN (
+                SELECT transaction_id, MAX(attempt_number) AS max_attempt
+                FROM decisions GROUP BY transaction_id
+            ) d2 ON d1.transaction_id = d2.transaction_id AND d1.attempt_number = d2.max_attempt
+        ) latest ON latest.transaction_id = t.id
+        WHERE t.status IN ('recovered', 'promise_to_pay', 'needs_human')
+        GROUP BY latest.root_cause
+        """
+    ).fetchall()
+
+    per_cause = []
+    for r in rows:
+        total = r["total"]
+        recovered = r["recovered"] or 0
+        rate = round((recovered / total * 100.0) if total else 0.0, 1)
+        per_cause.append({
+            "cause": r["cause"],
+            "total": total,
+            "recovered": recovered,
+            "recovery_rate_pct": rate,
+            "avg_attempts": round(r["avg_attempts"], 2) if r["avg_attempts"] is not None else None,
+        })
+
+    if not per_cause:
+        return jsonify({"available": False, "reason": "not enough resolved transactions yet"})
+
+    per_cause.sort(key=lambda c: c["recovery_rate_pct"])
+    weakest = per_cause[0]
+    strongest = per_cause[-1]
+
+    STRATEGY_HINT = {
+        "insufficient_funds": "delaying the reminder by a day or two instead of nudging immediately",
+        "card_declined": "leading with the UPI suggestion even more explicitly, or offering a second alternate method",
+        "3ds_dropoff": "a shorter, more direct retry message with fewer steps before the link",
+        "bank_timeout": "the current immediate-retry approach, which is already working well",
+    }
+    # Human-readable labels for causes embedded in generated sentences below —
+    # mirrors frontend/src/constants.js CAUSE_LABELS so this endpoint's prose
+    # never leaks a raw snake_case value like "insufficient_funds".
+    CAUSE_LABEL = {
+        "insufficient_funds": "Insufficient Funds",
+        "bank_timeout": "Bank Timeout",
+        "3ds_dropoff": "3DS Dropoff",
+        "card_declined": "Card Declined",
+    }
+    weakest_label = CAUSE_LABEL.get(weakest["cause"], weakest["cause"])
+    strongest_label = CAUSE_LABEL.get(strongest["cause"], strongest["cause"])
+
+    return jsonify({
+        "available": True,
+        "per_cause": per_cause,
+        "weakest_cause": weakest["cause"],
+        "strongest_cause": strongest["cause"],
+        "insight": (
+            f"{weakest_label} recovers at {weakest['recovery_rate_pct']}% "
+            f"vs {strongest_label} at {strongest['recovery_rate_pct']}% — "
+            f"a {round(strongest['recovery_rate_pct'] - weakest['recovery_rate_pct'], 1)} point gap "
+            f"visible in the audit trail this system already logs."
+        ),
+        "suggested_next_step": (
+            f"A v2 could use this outcome data to try {STRATEGY_HINT.get(weakest['cause'], 'a different strategy')} "
+            f"for {weakest_label} cases specifically — the strategy table stays fixed and auditable, "
+            f"but which fixed strategy applies could adapt per cause based on real recovery data, not guesswork."
+        ),
+        "note": (
+            "This is a live computed observation, not a trained model — the pipeline does not "
+            "act on it automatically. It demonstrates the outcome data already logged is sufficient "
+            "to drive a genuinely adaptive v2 without touching the fixed decision table's auditability."
+        ),
     })
 
 

@@ -1,13 +1,17 @@
-function StatCard({ label, value, sublabel, tone = 'default' }) {
+import AnimatedNumber from './AnimatedNumber'
+
+function StatCard({ label, value, decimals = 0, suffix = '', sublabel, tone = 'default' }) {
   const toneClasses = {
     default: 'text-slate-900',
     good: 'text-emerald-600',
     warn: 'text-rose-600',
   }
   return (
-    <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex-1 min-w-[160px]">
+    <div className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex-1 min-w-[160px] transition-shadow hover:shadow-sm">
       <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</div>
-      <div className={`text-3xl font-semibold mt-1 ${toneClasses[tone]}`}>{value}</div>
+      <div className={`text-3xl font-semibold mt-1 ${toneClasses[tone]}`}>
+        <AnimatedNumber value={value} decimals={decimals} suffix={suffix} />
+      </div>
       {sublabel && <div className="text-xs text-slate-400 mt-1">{sublabel}</div>}
     </div>
   )
@@ -21,13 +25,16 @@ export default function MetricsHeader({ summary }) {
       <div className="flex flex-wrap gap-4">
         <StatCard
           label="Recovery Rate"
-          value={`${summary.recovery_rate_pct}%`}
+          value={summary.recovery_rate_pct}
+          decimals={1}
+          suffix="%"
           sublabel={`${summary.status_counts.recovered} of ${summary.total_transactions} recovered`}
           tone="good"
         />
         <StatCard
           label="Avg Attempts to Recovery"
           value={summary.avg_attempts_to_recovery}
+          decimals={2}
           sublabel="among recovered transactions"
         />
         <StatCard
@@ -59,11 +66,13 @@ export default function MetricsHeader({ summary }) {
                 <div className="flex-1">
                   <div className="flex justify-between text-xs text-slate-500 mb-1">
                     <span>{stage.label}</span>
-                    <span className="font-medium text-slate-700">{stage.value}</span>
+                    <span className="font-medium text-slate-700">
+                      <AnimatedNumber value={stage.value} />
+                    </span>
                   </div>
                   <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${stage.color}`}
+                      className={`h-full rounded-full ${stage.color} transition-[width] duration-700 ease-out`}
                       style={{ width: `${widthPct}%` }}
                     />
                   </div>
