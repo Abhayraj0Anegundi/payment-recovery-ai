@@ -28,6 +28,7 @@ from gemini_client import classify_ambiguous_cause, generate_hinglish_message, f
 from razorpay_client import (
     create_payment_link, mock_payment_link, RazorpayCallError, RazorpayQuotaExhausted,
 )
+from adaptive import compute_adaptive_delay
 
 BACKEND_DIR = Path(__file__).parent
 DEFAULT_DB_PATH = BACKEND_DIR / "recovery.db"
@@ -78,6 +79,41 @@ def _simulate_outcome(rng: random.Random, cause: str, strategy: str, attempt_num
     promise *= decay
     ignored = 1.0 - paid - promise
     return _weighted_choice(rng, {"paid": paid, "promise_to_pay": promise, "ignored": ignored})
+
+
+def _live_recovery_rate_for_cause(conn, cause: str) -> tuple[float | None, int]:
+    """
+    Returns (recovery_rate_pct, sample_size) for `cause`, computed live from
+    every transaction whose MOST RECENT decision resolved to that cause and
+    has already reached a terminal status (recovered / promise_to_pay /
+    needs_human). This is the same live-aggregate pattern api.py's
+    /api/metrics/by-cause and /api/metrics/adaptive-insight use — genuinely
+    recomputed on every call, not cached or precomputed offline, so the
+    adaptive delay below actually shifts as more transactions resolve.
+    """
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN t.status = 'recovered' THEN 1 ELSE 0 END) AS recovered
+        FROM transactions t
+        JOIN (
+            SELECT d1.transaction_id, d1.root_cause
+            FROM decisions d1
+            INNER JOIN (
+                SELECT transaction_id, MAX(attempt_number) AS max_attempt
+                FROM decisions GROUP BY transaction_id
+            ) d2 ON d1.transaction_id = d2.transaction_id AND d1.attempt_number = d2.max_attempt
+        ) latest ON latest.transaction_id = t.id
+        WHERE latest.root_cause = ? AND t.status IN ('recovered', 'promise_to_pay', 'needs_human')
+        """,
+        (cause,),
+    ).fetchone()
+    total = row[0] or 0
+    recovered = row[1] or 0
+    if total == 0:
+        return None, 0
+    return (recovered / total * 100.0), total
 
 
 def _audit(conn, transaction_id: int, actor: str, action: str, reasoning: str):
@@ -183,13 +219,27 @@ def process_one_attempt(conn, txn: dict, attempt_number: int) -> bool:
     with conn:  # BEGIN...COMMIT per attempt — atomic decision+message+link+audit
         decision = _resolve_decision(conn, txn, attempt_number)
 
+        # Adaptive retry timing (backend/adaptive.py): computed live from
+        # this cause's actual recovery rate so far in THIS database — never
+        # influences decision["strategy"] above, which stays exactly as
+        # fixed/auditable as before. No further retry is scheduled once
+        # escalated, so this is left NULL for escalate_human.
+        if decision["strategy"] == "escalate_human":
+            delay_hours, delay_reasoning = None, None
+        else:
+            recovery_rate, sample_size = _live_recovery_rate_for_cause(conn, decision["cause"])
+            delay_result = compute_adaptive_delay(recovery_rate, sample_size)
+            delay_hours = delay_result["delay_hours"]
+            delay_reasoning = delay_result["reasoning"]
+
         cur = conn.execute(
             """INSERT INTO decisions
                (transaction_id, attempt_number, root_cause, classification_method,
-                strategy_chosen, reasoning_string)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+                strategy_chosen, reasoning_string, suggested_retry_delay_hours,
+                retry_delay_reasoning)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (txn_id, attempt_number, decision["cause"], decision["classification_method"],
-             decision["strategy"], decision["reasoning"]),
+             decision["strategy"], decision["reasoning"], delay_hours, delay_reasoning),
         )
         decision_id = cur.lastrowid
         _audit(
@@ -197,6 +247,8 @@ def process_one_attempt(conn, txn: dict, attempt_number: int) -> bool:
             f"Attempt {attempt_number}: strategy='{decision['strategy']}' for cause='{decision['cause']}' "
             f"(method={decision['classification_method']})",
         )
+        if delay_reasoning:
+            _audit(conn, txn_id, "system", "compute_adaptive_delay", delay_reasoning)
 
         if decision["strategy"] == "escalate_human":
             conn.execute(

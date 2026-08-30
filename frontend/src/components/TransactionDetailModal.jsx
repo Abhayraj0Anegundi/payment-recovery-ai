@@ -93,6 +93,17 @@ export default function TransactionDetailModal({ transactionId, onClose }) {
                           </span>
                         </div>
                         <p className="text-slate-500 text-xs">{d.reasoning_string}</p>
+                        {d.suggested_retry_delay_hours != null && (
+                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-start gap-1.5">
+                            <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 shrink-0">
+                              ADAPTIVE
+                            </span>
+                            <p className="text-slate-500 text-[11px]">
+                              Suggested next-retry delay: <span className="font-semibold text-slate-700">{d.suggested_retry_delay_hours}h</span>
+                              {' — '}{d.retry_delay_reasoning}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

@@ -15,6 +15,7 @@ from classifier import (
     decide,
     escalation_reasoning,
 )
+from adaptive import compute_adaptive_delay, MIN_SAMPLE_SIZE
 
 
 class TestClassifyCause(unittest.TestCase):
@@ -112,6 +113,40 @@ class TestNoInventedCauses(unittest.TestCase):
         for bogus in ("network_error", "fraud_suspected", "unknown", "", None):
             with self.assertRaises((ValueError, TypeError)):
                 strategy_for_cause(bogus)
+
+
+class TestAdaptiveDelay(unittest.TestCase):
+    """
+    Guards the one place outcome data is allowed to change behavior
+    (backend/adaptive.py) — never the strategy table, only retry timing.
+    """
+
+    def test_high_recovery_rate_gives_short_delay(self):
+        r = compute_adaptive_delay(80.0, sample_size=20)
+        self.assertEqual(r["delay_hours"], 1.0)
+
+    def test_low_recovery_rate_gives_long_delay(self):
+        r = compute_adaptive_delay(20.0, sample_size=20)
+        self.assertEqual(r["delay_hours"], 48.0)
+
+    def test_delay_is_monotonically_non_increasing_as_recovery_rate_rises(self):
+        rates = [5.0, 25.0, 45.0, 65.0, 85.0]
+        delays = [compute_adaptive_delay(r, sample_size=50)["delay_hours"] for r in rates]
+        for earlier, later in zip(delays, delays[1:]):
+            self.assertGreaterEqual(earlier, later)
+
+    def test_insufficient_sample_size_uses_labeled_default_not_a_computed_rate(self):
+        r = compute_adaptive_delay(90.0, sample_size=MIN_SAMPLE_SIZE - 1)
+        self.assertEqual(r["tier_label"], "insufficient history")
+        self.assertIn("resolved transaction", r["reasoning"])
+
+    def test_none_recovery_rate_uses_default(self):
+        r = compute_adaptive_delay(None, sample_size=0)
+        self.assertEqual(r["tier_label"], "insufficient history")
+
+    def test_reasoning_always_present_and_references_the_number(self):
+        r = compute_adaptive_delay(55.5, sample_size=10)
+        self.assertIn("55.5", r["reasoning"])
 
 
 if __name__ == "__main__":

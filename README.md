@@ -341,27 +341,44 @@ batch) — same API, same frontend, just point it at the DB you want to show.
 
 ---
 
-## What the outcome data suggests — an honest note on "does this learn?"
+## "Does this learn?" — yes, retry timing does; the strategy table never does
 
 The strategy table is deliberately fixed and never LLM-chosen (see above) — that's a
-trust and auditability decision, not an oversight, and it means the pipeline itself does
-not adapt between transaction #1 and #91. But it does log a real outcome for every
-attempt, and that data already contains a genuine, checkable signal:
+trust and auditability decision, not an oversight. But **retry timing is genuinely
+adaptive**, computed live from this database's own outcome history
+(`backend/adaptive.py`, wired into `pipeline.py::process_one_attempt`):
+
+Every non-terminal decision now also computes a **suggested retry delay**, derived from
+that cause's actual recovery rate so far in this exact database — not a hardcoded
+per-cause constant, not an LLM guess. A cause recovering well (e.g. `bank_timeout` at
+76.9%) gets a short suggested delay (retrying soon is working); a cause recovering
+poorly (e.g. `insufficient_funds` at 38.1%) gets a longer one (an immediate re-nudge
+won't help — give the customer time). The exact recovery-rate query and resulting delay
+are logged to `audit_log` (`action='compute_adaptive_delay'`) for every attempt, so the
+number behind each suggestion is always checkable, not asserted.
 
 ```
 GET /api/metrics/adaptive-insight
 ```
 
-computes, live, the recovery rate per root cause and surfaces the gap directly:
-**`insufficient_funds` recovers at 38.1% vs `bank_timeout` at 76.9%** — a real ~39-point
-difference visible in `recovery.db` today, not a hypothetical. The endpoint (and the
-matching dashboard panel) is explicit that this is a **computed observation, not a
-trained model** — the pipeline does not act on it automatically. It exists to make one
-concrete claim: the audit trail this system already writes is sufficient to drive a
-genuinely adaptive v2 (e.g. per-cause timing changes — delay the `insufficient_funds`
-reminder instead of sending it immediately) without touching the fixed decision table's
-auditability. Which fixed strategy applies could become data-driven; whether an LLM gets
-to invent a new one never does.
+still exists as a plain-language summary of the same signal (e.g. "Insufficient Funds
+recovers at 38.1% vs Bank Timeout at 76.9%") for the dashboard's "What the outcome data
+suggests" panel.
+
+**What stays fixed, on purpose**: `decisions.strategy_chosen` — which of the 4 fixed
+strategies applies to a cause — is never touched by this. Only `HOW LONG to wait` before
+the next nudge is data-driven; `WHICH of the 4 strategies to send` remains exactly as
+fixed and auditable as before, and no LLM is involved in computing the delay either — it's
+a deterministic tiered lookup (`adaptive.py::compute_adaptive_delay`) over a live SQL
+aggregate. With fewer than 5 resolved transactions for a cause, the delay falls back to a
+labeled default (12h) rather than pretending a tiny sample is a trustworthy rate — see
+`adaptive.py`'s `MIN_SAMPLE_SIZE`. Covered by unit tests in `test_classifier.py`
+(`TestAdaptiveDelay`).
+
+This is visible on the dashboard as a small amber "ADAPTIVE" badge under each decision's
+reasoning (Live Demo panel and the transaction detail modal) — present for any decision
+made after this feature shipped; the original 91 seeded transactions predate it and show
+no badge, which is expected and disclosed rather than backfilled.
 
 ---
 

@@ -18,16 +18,22 @@ CREATE TABLE transactions (
 );
 
 CREATE TABLE decisions (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    transaction_id        INTEGER NOT NULL REFERENCES transactions(id),
-    attempt_number        INTEGER NOT NULL,
-    root_cause            TEXT NOT NULL CHECK (root_cause IN
-                              ('insufficient_funds','bank_timeout','3ds_dropoff','card_declined')),
-    classification_method TEXT NOT NULL CHECK (classification_method IN ('rule','llm')),
-    strategy_chosen       TEXT NOT NULL CHECK (strategy_chosen IN
-                              ('retry_same_method','suggest_upi','send_reminder','escalate_human')),
-    reasoning_string      TEXT NOT NULL,
-    created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_id            INTEGER NOT NULL REFERENCES transactions(id),
+    attempt_number             INTEGER NOT NULL,
+    root_cause                 TEXT NOT NULL CHECK (root_cause IN
+                                  ('insufficient_funds','bank_timeout','3ds_dropoff','card_declined')),
+    classification_method      TEXT NOT NULL CHECK (classification_method IN ('rule','llm')),
+    strategy_chosen            TEXT NOT NULL CHECK (strategy_chosen IN
+                                  ('retry_same_method','suggest_upi','send_reminder','escalate_human')),
+    reasoning_string           TEXT NOT NULL,
+    -- Adaptive retry timing (see backend/adaptive.py): computed live from
+    -- this cause's actual recovery rate so far in this DB. NEVER influences
+    -- strategy_chosen above — that stays fixed per the decision table.
+    -- NULL for escalate_human decisions (no further retry is scheduled).
+    suggested_retry_delay_hours REAL,
+    retry_delay_reasoning       TEXT,
+    created_at                 TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE messages (
