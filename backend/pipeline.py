@@ -23,7 +23,10 @@ import time
 import uuid
 from pathlib import Path
 
-from classifier import decide, escalation_reasoning, classify_cause, strategy_for_cause, AMBIGUOUS
+from classifier import (
+    decide, escalation_reasoning, classify_cause, strategy_for_cause,
+    strategy_for_llm_classification, AMBIGUOUS,
+)
 from gemini_client import classify_ambiguous_cause, generate_hinglish_message, fallback_message, GeminiCallError
 from razorpay_client import (
     create_payment_link, mock_payment_link, RazorpayCallError, RazorpayQuotaExhausted,
@@ -160,10 +163,18 @@ def _audit(conn, transaction_id: int, actor: str, action: str, reasoning: str):
 def _resolve_decision(conn, txn: dict, attempt_number: int) -> dict:
     """
     Returns a fully-resolved decision dict {cause, strategy, classification_method,
-    reasoning}, running LLM classification only if the rule-based path is
-    AMBIGUOUS. Applies the attempt-3 hard-cap override after cause resolution.
-    Logs every classification/decision step to audit_log (same transaction,
-    caller commits).
+    reasoning, confidence}, running LLM classification only if the rule-based
+    path is AMBIGUOUS. Applies the attempt-3 hard-cap override after cause
+    resolution. Logs every classification/decision step to audit_log (same
+    transaction, caller commits).
+
+    Confidence-driven escalation: when the LLM classifies with "low"
+    confidence, strategy is forced to escalate_human regardless of
+    attempt_number — an honest "I'm essentially guessing" from the model
+    routes straight to a human instead of a nudge being sent on a guess.
+    This is a real behavior change (see gemini_client.py's confidence
+    field), not a cosmetic label — a low-confidence classification never
+    reaches strategy_for_cause().
     """
     txn_id = txn["id"]
     failure_code = txn["razorpay_failure_code"]
@@ -172,30 +183,50 @@ def _resolve_decision(conn, txn: dict, attempt_number: int) -> dict:
 
     if d["classification_method"] == "llm" or d["cause"] is None:
         # Ambiguous rule-based result -> must classify via LLM.
+        confidence = None
         try:
             llm_result = classify_ambiguous_cause(
                 txn["failure_note"], txn["amount"], txn["original_payment_method"]
             )
             cause = llm_result["cause"]
+            confidence = llm_result["confidence"]
             justification = llm_result["justification"]
             _audit(
                 conn, txn_id, "llm", "classify_root_cause",
-                f"LLM classified ambiguous failure_code='other' as '{cause}': {justification}",
+                f"LLM classified ambiguous failure_code='other' as '{cause}' "
+                f"(confidence={confidence}): {justification}",
             )
         except (GeminiCallError, ValueError) as e:
             # Deterministic fallback: cannot leave root_cause unresolved, so
             # fall back to the most common ambiguous-cause bucket and log it
-            # explicitly as a fallback, per audit requirements.
+            # explicitly as a fallback, per audit requirements. Treated as
+            # "low" confidence -- a fallback IS the system being uncertain,
+            # by definition, so it gets the same escalation treatment.
             cause = "card_declined"
+            confidence = "low"
             justification = "LLM classification failed twice; defaulted to card_declined as the most common ambiguous cause."
             _audit(conn, txn_id, "system", "llm_fallback_used", f"Classification fallback: {e}")
             _audit(conn, txn_id, "system", "classify_root_cause", justification)
 
+        # Pure decision-table function (classifier.py) — attempt-3 cap and
+        # low-confidence override are checked there, in one place, so this
+        # logic can't drift out of sync between pipeline.py and its tests.
+        strategy = strategy_for_llm_classification(cause, confidence, attempt_number)
+
         if attempt_number == 3:
-            strategy = "escalate_human"
             reasoning = escalation_reasoning(cause, attempt_number)
+        elif strategy == "escalate_human":  # must be the low-confidence override
+            reasoning = (
+                f"LLM classified this as '{cause}' but self-reported LOW confidence: "
+                f"{justification} Escalating to a human instead of nudging on a guess, "
+                "regardless of attempt number."
+            )
+            _audit(
+                conn, txn_id, "system", "escalate_low_confidence",
+                f"Attempt {attempt_number}: low-confidence classification ('{cause}') "
+                "routed to needs_human instead of proceeding with a nudge.",
+            )
         else:
-            strategy = strategy_for_cause(cause)
             reasoning = justification
 
         return {
@@ -203,6 +234,7 @@ def _resolve_decision(conn, txn: dict, attempt_number: int) -> dict:
             "strategy": strategy,
             "classification_method": "llm",
             "reasoning": reasoning,
+            "confidence": confidence,
         }
 
     # Rule-based path — already fully resolved by decide().
@@ -267,14 +299,16 @@ def process_one_attempt(conn, txn: dict, attempt_number: int) -> bool:
             delay_hours = delay_result["delay_hours"]
             delay_reasoning = delay_result["reasoning"]
 
+        confidence = decision.get("confidence")  # None for rule-based decisions
+
         cur = conn.execute(
             """INSERT INTO decisions
                (transaction_id, attempt_number, root_cause, classification_method,
                 strategy_chosen, reasoning_string, suggested_retry_delay_hours,
-                retry_delay_reasoning)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                retry_delay_reasoning, classification_confidence)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (txn_id, attempt_number, decision["cause"], decision["classification_method"],
-             decision["strategy"], decision["reasoning"], delay_hours, delay_reasoning),
+             decision["strategy"], decision["reasoning"], delay_hours, delay_reasoning, confidence),
         )
         decision_id = cur.lastrowid
         _audit(
@@ -290,10 +324,20 @@ def process_one_attempt(conn, txn: dict, attempt_number: int) -> bool:
                 "UPDATE transactions SET status = 'needs_human', attempt_count = ? WHERE id = ?",
                 (attempt_number, txn_id),
             )
-            _audit(
-                conn, txn_id, "system", "escalate_to_needs_human",
-                f"Hard 3-attempt cap reached on attempt {attempt_number}; escalated to needs_human queue.",
-            )
+            # Two distinct reasons a transaction escalates: the hard 3-attempt
+            # cap, or (new) an honest low-confidence LLM classification. The
+            # audit reasoning distinguishes which, rather than always
+            # claiming the attempt cap.
+            if confidence == "low":
+                escalation_note = (
+                    f"Escalated on attempt {attempt_number} due to LOW-confidence LLM "
+                    "classification, not the attempt cap — see 'escalate_low_confidence' above."
+                )
+            else:
+                escalation_note = (
+                    f"Hard 3-attempt cap reached on attempt {attempt_number}; escalated to needs_human queue."
+                )
+            _audit(conn, txn_id, "system", "escalate_to_needs_human", escalation_note)
             return True  # terminal — commit happens on `with conn:` exit
 
         # Real Razorpay test-mode payment link for this attempt, falling

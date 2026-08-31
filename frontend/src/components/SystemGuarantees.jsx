@@ -38,7 +38,7 @@ export default function SystemGuarantees({ guarantees }) {
             System Guarantees — verifiable from audit_log, not asserted
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 divide-x divide-white/10">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 divide-x divide-white/10">
           <Metric
             value={guarantees.strategy_decisions_made_by_llm}
             label={`of ${guarantees.total_decisions} strategy decisions made by LLM`}
@@ -54,8 +54,15 @@ export default function SystemGuarantees({ guarantees }) {
           />
           <Metric
             value={guarantees.attempt_cap.escalations_not_at_attempt_3}
-            label="escalations that happened before attempt 3"
+            label="early escalations (attempt cap OR low-confidence override — see next)"
           />
+          {guarantees.confidence_safety && (
+            <Metric
+              value={guarantees.confidence_safety.low_confidence_auto_escalations}
+              label={`of ${guarantees.confidence_safety.low_confidence_classifications} low-confidence classifications auto-escalated`}
+              tone="good"
+            />
+          )}
           <Metric
             value={guarantees.llm_calls.fallback_template_used}
             label={`LLM parse failures out of ${guarantees.llm_calls.message_generation} message calls`}

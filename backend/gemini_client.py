@@ -55,9 +55,14 @@ You MUST classify the failure into EXACTLY ONE of these four labels — no other
 
 Rules:
 - You are FORBIDDEN from inventing a new label, adding a fifth category, or returning "other"/"unknown"/"unclear".
-- If the note is genuinely ambiguous, pick the single closest of the four labels based on the evidence given — do not hedge.
+- If the note is genuinely ambiguous, pick the single closest of the four labels based on the evidence given — do not hedge on the LABEL. You must always pick one of the four.
+- You MUST also self-report your confidence in that classification, honestly, as exactly one of "high", "medium", "low":
+  - "high": the gateway note clearly and specifically points to one cause (e.g. it names a timeout, an explicit balance/limit message, an OTP/verification failure, or an explicit decline reason).
+  - "medium": the note is suggestive but not explicit — you're inferring from partial or generic wording.
+  - "low": the note is vague, generic, contradictory, or gives you almost nothing to go on (e.g. "idk", "payment failed", "something went wrong") — you are essentially guessing between the four labels.
+- Being honest about "low" confidence is exactly as important as picking the right label. Do not inflate confidence to look more certain than you are — a wrong "high" is worse than an honest "low".
 - Output ONLY valid JSON matching this exact schema, with no markdown fences, no preamble, no explanation outside the JSON:
-{"cause": "<one of the four labels>", "justification": "<one sentence, specific to the input given>"}
+{"cause": "<one of the four labels>", "confidence": "<high|medium|low>", "justification": "<one sentence, specific to the input given, and if confidence is low, say what's missing>"}
 - Do not output anything before or after the JSON object."""
 
 MESSAGE_SYSTEM_INSTRUCTION = """You are writing a short WhatsApp-style payment recovery nudge for an Indian customer, in natural
@@ -178,21 +183,30 @@ def _extract_json(text: str) -> dict:
 # 1. Ambiguous root-cause classification
 # ---------------------------------------------------------------------------
 
+_VALID_CONFIDENCE = ("high", "medium", "low")
+
+
 def classify_ambiguous_cause(failure_note: str, amount: int, payment_method: str) -> dict:
     """
     Calls Gemini to classify an ambiguous ("other") failure into one of the
-    4 fixed cause labels. Retries once on invalid JSON / invalid label; on
+    4 fixed cause labels, along with a self-reported confidence level.
+    Retries once on invalid JSON / invalid label / invalid confidence; on
     second failure, raises GeminiCallError so the caller can apply the
     deterministic fallback and log actor="system", action="llm_fallback_used".
 
-    Returns {"cause": <one of CAUSES>, "justification": str}.
+    Returns {"cause": <one of CAUSES>, "confidence": <high|medium|low>,
+    "justification": str}. The confidence is NOT decorative — pipeline.py
+    uses "low" confidence to force escalate_human regardless of attempt
+    number, a real behavior change, not just a UI label. See
+    "Does the LLM's uncertainty change behavior?" in the README.
     """
     user_message = (
         "failure_code: other\n"
         f"gateway_note: {failure_note or '(none provided)'}\n"
         f"amount: {amount} paise\n"
         f"payment_method: {payment_method}\n\n"
-        "Classify this into exactly one of: insufficient_funds, bank_timeout, 3ds_dropoff, card_declined."
+        "Classify this into exactly one of: insufficient_funds, bank_timeout, 3ds_dropoff, card_declined. "
+        "Also self-report your confidence honestly, per the rules above."
     )
 
     last_error = None
@@ -201,12 +215,15 @@ def classify_ambiguous_cause(failure_note: str, amount: int, payment_method: str
             raw = _call_gemini(CLASSIFICATION_SYSTEM_INSTRUCTION, user_message)
             parsed = _extract_json(raw)
             cause = parsed.get("cause")
+            confidence = parsed.get("confidence")
             justification = parsed.get("justification")
             if cause not in CAUSES:
                 raise ValueError(f"LLM returned invalid cause label: {cause!r}")
+            if confidence not in _VALID_CONFIDENCE:
+                raise ValueError(f"LLM returned invalid confidence level: {confidence!r}")
             if not justification or not isinstance(justification, str):
                 raise ValueError("LLM response missing justification")
-            return {"cause": cause, "justification": justification}
+            return {"cause": cause, "confidence": confidence, "justification": justification}
         except (GeminiCallError, ValueError, json.JSONDecodeError) as e:
             last_error = e
 

@@ -303,24 +303,24 @@ py -3 api.py --db recovery_real.db --port 5001
 ## Honest results — the actual run, not a cherry-picked one
 
 **90 seeded transactions processed** through the real pipeline in the original batch run,
-**plus 1 additional transaction (#96)** added afterward via the dashboard's own Live Demo
-"build your own scenario" form (see below) and resolved through the same real pipeline —
-91 total. Metrics below are pulled live from `GET /api/metrics/summary` and
-`/api/metrics/by-cause` against the committed `recovery.db` — reproducible by running the
-dashboard yourself, and they will keep changing slightly if you trigger more Live Demo
-transactions against this same file, which is expected: they're computed live, not frozen.
+**plus 2 additional transactions (#96, #129)** added afterward via the dashboard's own
+Live Demo form and resolved through the same real pipeline — 92 total. Metrics below are
+pulled live from `GET /api/metrics/summary` and `/api/metrics/by-cause` against the
+committed `recovery.db` — reproducible by running the dashboard yourself, and they will
+keep changing slightly if you trigger more Live Demo transactions against this same file,
+which is expected: they're computed live, not frozen.
 
 | Metric | Value |
 |---|---|
-| Total transactions | 91 |
-| Recovered | 57 (62.6%) |
+| Total transactions | 92 |
+| Recovered | 57 (62.0%) |
 | Promise to pay | 23 |
-| Needs human (escalated) | **11** |
+| Needs human (escalated) | **12** |
 | Avg attempts to recovery | 1.25 |
 | Root-cause classifications via rule table | 117 |
-| Root-cause classifications via LLM (ambiguous `other` cases) | 13 |
+| Root-cause classifications via LLM (ambiguous `other` cases) | 14 |
 | LLM message-generation fallback triggers | 0 (every Hinglish message parsed cleanly) |
-| `audit_log` rows | 830 |
+| `audit_log` rows | 835 |
 
 **Per-cause breakdown** (computed live, not hand-picked — note the real variance,
 consistent with the intended weighting that bank-side transient failures recover more
@@ -328,13 +328,15 @@ easily than low-balance ones):
 
 | Root cause | Total | Recovered | Promise | Needs Human | Recovery % |
 |---|---|---|---|---|---|
-| Bank Timeout | 26 | 20 | 4 | 2 | **76.9%** |
+| Bank Timeout | 27 | 20 | 4 | 3 | 74.1% |
 | 3DS Dropoff | 22 | 15 | 5 | 2 | 68.2% |
 | Card Declined | 22 | 14 | 5 | 3 | 63.6% |
 | Insufficient Funds | 21 | 8 | 9 | 4 | **38.1%** |
 
-11 transactions genuinely reached `needs_human` after exhausting all 3 attempts — this
-is visible and pinned in the dashboard, not a hypothetical.
+12 transactions genuinely reached `needs_human` — 11 after exhausting all 3 attempts, plus
+1 (#129, see below) escalated immediately on attempt 1 due to low-confidence
+classification. Both routes are visible and distinguishable in the dashboard's audit
+trail, not a hypothetical.
 
 **Transaction #96 is worth calling out specifically**: it was created by typing
 `"idk what happened"` as a gateway note under the ambiguous `other` failure code — a
@@ -344,6 +346,14 @@ inventing a 5th or hedging: *"Since the gateway note is uninformative, bank_time
 chosen as the closest default for unexplained transaction drops."* This is the
 classification prompt's forbid-a-5th-label constraint working exactly as designed under
 adversarial input, not just clean seeded data.
+
+**Transaction #129 is the concrete example of the low-confidence auto-escalation feature**
+(see "Does the LLM's uncertainty change behavior?" below): gateway note `"payment didnt
+go through, not sure why"`, classified by the LLM as `bank_timeout` but self-reported as
+**low confidence** — *"The gateway note is entirely vague and missing specific details,
+making this a blind guess."* The pipeline escalated straight to `needs_human` on attempt 1,
+never sending a nudge based on a guess. This is a real, live-triggered example, not a
+constructed test case description — the same webhook endpoint anyone can hit themselves.
 
 ---
 
@@ -427,16 +437,16 @@ a recovery-rate percentage alone doesn't answer the question a business reviewer
 asks: *how much money?* Computed live from the same `transactions.amount` column every
 other endpoint reads:
 
-- **₹5,12,944 recovered** out of ₹6,99,910 in total failed-payment value across the 91
-  seeded transactions (62.6% recovery rate, same number shown elsewhere — this just adds
+- **₹5,12,944 recovered** out of ₹7,01,709 in total failed-payment value across the 92
+  seeded transactions (62.0% recovery rate, same number shown elsewhere — this just adds
   the rupee figure behind it).
 - **₹1,13,477** sits in `promise_to_pay` — explicitly *not* counted as recovered, since
   nothing has actually been paid yet.
 
 **The "at scale" projection is clearly separated and labeled, not blended into the
-measured numbers**: it applies this dataset's own measured 62.6% recovery rate (not an
+measured numbers**: it applies this dataset's own measured recovery rate (not an
 invented target) to a hypothetical 1,000-failed-payments/month volume at this dataset's
-own average transaction size (₹7,691), and states outright that it's a projection, not a
+own average transaction size, and states outright that it's a projection, not a
 measured result — because this pipeline has never run against a real business's live
 failed-payment stream (see "Read this first" above). The point isn't to claim a specific
 business outcome; it's to show the mechanism for translating a recovery rate into a
@@ -505,6 +515,35 @@ no badge, which is expected and disclosed rather than backfilled.
 
 ---
 
+## "What if the LLM's classification is wrong?" — it tells you when it isn't sure
+
+The classification prompt (`gemini_client.py::CLASSIFICATION_SYSTEM_INSTRUCTION`) now
+requires the LLM to self-report a confidence level — `high`, `medium`, or `low` — alongside
+every ambiguous-cause classification, and is explicitly instructed that an honest "low" is
+better than an inflated "high": *"a wrong 'high' is worse than an honest 'low'."*
+
+**That confidence isn't decorative — it changes behavior.** `classifier.py::
+strategy_for_llm_classification()` (a pure, unit-tested function — see
+`TestLowConfidenceEscalation` in `test_classifier.py`) forces `escalate_human` whenever
+confidence is `"low"`, **regardless of attempt number** — on attempt 1, not just after the
+3-attempt cap. A classification the model is essentially guessing at never reaches
+`strategy_for_cause()` to generate a customer-facing nudge; it goes straight to the
+`needs_human` queue instead. A parse/API failure that falls back to the deterministic
+default is treated the same way — a fallback *is* the system being uncertain, by
+definition, so it gets the identical escalation treatment.
+
+This is real, not asserted: `/api/metrics/system-guarantees` reports
+`confidence_safety.low_confidence_auto_escalations` out of
+`confidence_safety.low_confidence_classifications`, computed live from
+`audit_log` rows with `action='escalate_low_confidence'` — the number is 1 of 1 in the
+current `recovery.db` (see transaction #129 above), and will always equal the total count
+of low-confidence classifications, because the code path that produces one *is* the same
+code path that escalates it. The dashboard shows a color-coded confidence badge (teal
+high / amber medium / rose low) on every LLM-classified decision, in both the Live Demo
+panel and the transaction detail modal.
+
+---
+
 ## Data model
 
 See [`backend/schema.sql`](backend/schema.sql) for the full DDL. Five tables:
@@ -519,9 +558,10 @@ code.
 backend/
   schema.sql           — SQLite DDL
   seed.py              — synthetic batch generator
-  classifier.py        — rule-based cause/strategy lookup (pure functions)
+  classifier.py        — rule-based cause/strategy lookup + low-confidence
+                          auto-escalation override (pure functions)
   adaptive.py           — quartile-derived retry-delay timing (never touches strategy)
-  test_classifier.py   — unit tests (24 tests)
+  test_classifier.py   — unit tests (31 tests)
   stability_check.py   — 30-seed re-run proving the recovery-rate ordering
                           isn't a lucky single sample (see "Read this first")
   gemini_client.py     — the 2 narrow Gemini prompts + JSON parsing/fallback

@@ -33,6 +33,12 @@ CREATE TABLE decisions (
     -- NULL for escalate_human decisions (no further retry is scheduled).
     suggested_retry_delay_hours REAL,
     retry_delay_reasoning       TEXT,
+    -- LLM self-reported confidence (classification_method='llm' only; NULL
+    -- for rule-based decisions, which have no ambiguity to be confident
+    -- about). 'low' confidence forces strategy_chosen='escalate_human'
+    -- regardless of attempt_number, in pipeline.py -- this is a real
+    -- behavior change, not just a displayed label. See gemini_client.py.
+    classification_confidence TEXT CHECK (classification_confidence IN ('high','medium','low') OR classification_confidence IS NULL),
     created_at                 TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

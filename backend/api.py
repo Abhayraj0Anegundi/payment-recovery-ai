@@ -619,8 +619,19 @@ def system_guarantees():
     escalations = db.execute(
         "SELECT COUNT(*) c FROM decisions WHERE strategy_chosen = 'escalate_human'"
     ).fetchone()["c"]
+    # NOTE: this used to be expected to always be 0, back when the ONLY way
+    # to reach escalate_human before attempt 3 was a bug. Since the
+    # low-confidence auto-escalation feature (classifier.strategy_for_llm_
+    # classification), a NON-zero value here is expected and correct — it's
+    # the escalate_low_confidence rows below, not a defect.
     escalations_not_at_3 = db.execute(
         "SELECT COUNT(*) c FROM decisions WHERE strategy_chosen = 'escalate_human' AND attempt_number != 3"
+    ).fetchone()["c"]
+    low_confidence_escalations = db.execute(
+        "SELECT COUNT(*) c FROM audit_log WHERE action = 'escalate_low_confidence'"
+    ).fetchone()["c"]
+    low_confidence_classifications = db.execute(
+        "SELECT COUNT(*) c FROM decisions WHERE classification_confidence = 'low'"
     ).fetchone()["c"]
 
     total_audit_rows = db.execute("SELECT COUNT(*) c FROM audit_log").fetchone()["c"]
@@ -641,6 +652,15 @@ def system_guarantees():
             "hard_cap": 3,
             "escalations_total": escalations,
             "escalations_not_at_attempt_3": escalations_not_at_3,
+        },
+        "confidence_safety": {
+            "low_confidence_classifications": low_confidence_classifications,
+            "low_confidence_auto_escalations": low_confidence_escalations,
+            "note": (
+                "Every low-confidence LLM classification is routed to needs_human "
+                "instead of a nudge, regardless of attempt number — verifiable via "
+                "audit_log action='escalate_low_confidence'."
+            ),
         },
         "audit_log_rows": total_audit_rows,
     })

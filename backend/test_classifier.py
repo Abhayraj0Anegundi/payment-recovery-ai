@@ -11,6 +11,7 @@ from classifier import (
     CAUSES,
     classify_cause,
     strategy_for_cause,
+    strategy_for_llm_classification,
     rule_reasoning_for_cause,
     decide,
     escalation_reasoning,
@@ -187,6 +188,53 @@ class TestAdaptiveDelay(unittest.TestCase):
         r_low_context = compute_adaptive_delay(55.0, sample_size=20, all_cause_rates=low_context)
         r_high_context = compute_adaptive_delay(55.0, sample_size=20, all_cause_rates=high_context)
         self.assertLess(r_low_context["delay_hours"], r_high_context["delay_hours"])
+
+
+class TestLowConfidenceEscalation(unittest.TestCase):
+    """
+    Guards the new confidence-driven safety override: an LLM classification
+    with self-reported "low" confidence must escalate to a human regardless
+    of attempt number, instead of a nudge being sent on a guess.
+    """
+
+    def test_high_confidence_uses_normal_strategy_table(self):
+        strategy = strategy_for_llm_classification("bank_timeout", "high", attempt_number=1)
+        self.assertEqual(strategy, strategy_for_cause("bank_timeout"))
+        self.assertNotEqual(strategy, "escalate_human")
+
+    def test_medium_confidence_uses_normal_strategy_table(self):
+        strategy = strategy_for_llm_classification("card_declined", "medium", attempt_number=2)
+        self.assertEqual(strategy, strategy_for_cause("card_declined"))
+
+    def test_low_confidence_escalates_on_attempt_1(self):
+        # The core new behavior: escalates immediately, not after 3 attempts.
+        strategy = strategy_for_llm_classification("insufficient_funds", "low", attempt_number=1)
+        self.assertEqual(strategy, "escalate_human")
+
+    def test_low_confidence_escalates_on_attempt_2(self):
+        strategy = strategy_for_llm_classification("3ds_dropoff", "low", attempt_number=2)
+        self.assertEqual(strategy, "escalate_human")
+
+    def test_attempt_3_escalates_regardless_of_confidence(self):
+        # The existing hard cap still applies unconditionally, even for a
+        # confident classification -- confidence adds a NEW escalation
+        # trigger, it doesn't remove the old one.
+        for confidence in ("high", "medium", "low"):
+            strategy = strategy_for_llm_classification("bank_timeout", confidence, attempt_number=3)
+            self.assertEqual(strategy, "escalate_human", f"failed for confidence={confidence}")
+
+    def test_invalid_confidence_raises(self):
+        with self.assertRaises(ValueError):
+            strategy_for_llm_classification("bank_timeout", "very_sure", attempt_number=1)
+
+    def test_low_confidence_never_reaches_strategy_for_cause_for_a_nudge(self):
+        # Every cause, at low confidence, attempt 1 -- none of them should
+        # ever produce a retry/reminder/UPI-suggest strategy. This is the
+        # literal safety property: a low-confidence guess never triggers a
+        # customer-facing nudge.
+        for cause in CAUSES:
+            strategy = strategy_for_llm_classification(cause, "low", attempt_number=1)
+            self.assertEqual(strategy, "escalate_human", f"failed for cause={cause}")
 
 
 if __name__ == "__main__":

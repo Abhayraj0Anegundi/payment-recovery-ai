@@ -100,6 +100,22 @@ export default function TransactionDetailModal({ transactionId, onClose }) {
                             {d.classification_method === 'llm' ? 'LLM classified' : 'Rule-based'}
                           </span>
                         </div>
+                        {d.classification_confidence && (
+                          <div className="mb-1.5">
+                            <span
+                              className={`text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 ${
+                                d.classification_confidence === 'high'
+                                  ? 'bg-teal-400/10 text-teal-300 ring-1 ring-teal-400/30'
+                                  : d.classification_confidence === 'medium'
+                                  ? 'bg-amber-400/10 text-amber-300 ring-1 ring-amber-400/30'
+                                  : 'bg-rose-400/10 text-rose-300 ring-1 ring-rose-400/30'
+                              }`}
+                            >
+                              {d.classification_confidence} confidence
+                              {d.classification_confidence === 'low' && ' → auto-escalated'}
+                            </span>
+                          </div>
+                        )}
                         <p className="text-slate-400 text-xs">{d.reasoning_string}</p>
                         {d.suggested_retry_delay_hours != null && (
                           <div className="mt-2 pt-2 border-t border-white/10 flex items-start gap-1.5">

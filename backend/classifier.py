@@ -152,3 +152,37 @@ def escalation_reasoning(cause: str, attempt_number: int) -> str:
         "the payment; hard cap of 3 attempts reached, escalating to human queue "
         "regardless of cause."
     )
+
+
+VALID_CONFIDENCE = ("high", "medium", "low")
+
+
+def strategy_for_llm_classification(cause: str, confidence: str, attempt_number: int) -> str:
+    """
+    Pure decision-table function for the LLM classification path: given a
+    resolved cause, the LLM's self-reported confidence in that
+    classification, and the attempt number, returns which strategy applies.
+
+    Two independent overrides to the normal strategy_for_cause() lookup,
+    checked in this order:
+      1. attempt_number == 3 -> escalate_human (the existing hard cap,
+         unconditional, takes priority regardless of confidence).
+      2. confidence == "low" -> escalate_human, even on attempt 1 or 2. An
+         honest "I'm essentially guessing" from the model routes straight
+         to a human instead of a nudge being sent on a guess. This is a
+         real behavior change driven by the LLM's own self-assessment, not
+         a second LLM decision about strategy — the LLM still never picks
+         WHICH strategy to use for a confident classification, only
+         whether it's confident enough to let the normal table apply.
+
+    Raises ValueError for an invalid confidence level, same defensive
+    posture as strategy_for_cause() rejecting invalid causes.
+    """
+    if confidence not in VALID_CONFIDENCE:
+        raise ValueError(f"confidence must be one of {VALID_CONFIDENCE}, got {confidence!r}")
+
+    if attempt_number == 3:
+        return "escalate_human"
+    if confidence == "low":
+        return "escalate_human"
+    return strategy_for_cause(cause)
