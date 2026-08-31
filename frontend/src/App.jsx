@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import { simulateFreshActivity } from './simulateActivity'
 import MetricsHeader from './components/MetricsHeader'
+import RevenueImpact from './components/RevenueImpact'
 import CauseBreakdownTable from './components/CauseBreakdownTable'
 import AdaptiveInsight from './components/AdaptiveInsight'
 import SystemGuarantees from './components/SystemGuarantees'
@@ -14,6 +15,7 @@ function App() {
   const [transactions, setTransactions] = useState([])
   const [summary, setSummary] = useState(null)
   const [byCause, setByCause] = useState(null)
+  const [revenue, setRevenue] = useState(null)
   const [insight, setInsight] = useState(null)
   const [guarantees, setGuarantees] = useState(null)
   const [showcase, setShowcase] = useState(null)
@@ -26,10 +28,11 @@ function App() {
 
   async function loadAll() {
     try {
-      const [txns, sum, cause, ins, guar, show] = await Promise.all([
+      const [txns, sum, cause, rev, ins, guar, show] = await Promise.all([
         api.transactions(),
         api.metricsSummary(),
         api.metricsByCause(),
+        api.revenueImpact(),
         api.adaptiveInsight(),
         api.systemGuarantees(),
         api.messagesShowcase(),
@@ -37,6 +40,7 @@ function App() {
       setTransactions(txns)
       setSummary(sum)
       setByCause(cause)
+      setRevenue(rev)
       setInsight(ins)
       setGuarantees(guar)
       setShowcase(show)
@@ -143,6 +147,8 @@ function App() {
             <LiveDemo onResolved={loadAll} />
 
             <MetricsHeader summary={summary} />
+
+            <RevenueImpact impact={revenue} />
 
             <SystemGuarantees guarantees={guarantees} />
 

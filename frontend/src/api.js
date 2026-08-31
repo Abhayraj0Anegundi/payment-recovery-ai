@@ -25,6 +25,7 @@ export const api = {
   needsHumanCount: () => get('/needs-human-count'),
   systemGuarantees: () => get('/metrics/system-guarantees'),
   adaptiveInsight: () => get('/metrics/adaptive-insight'),
+  revenueImpact: () => get('/metrics/revenue-impact'),
   messagesShowcase: () => get('/messages/showcase'),
   triggerWebhook: (payload) => post('/webhook/payment-failed', payload),
   respondToTransaction: (id, response) => post(`/transactions/${id}/respond`, { response }),

@@ -420,6 +420,30 @@ batch) — same API, same frontend, just point it at the DB you want to show.
 
 ---
 
+## What this means in money, not just percentages
+
+`GET /api/metrics/revenue-impact` and the dashboard's "Revenue Impact" panel exist because
+a recovery-rate percentage alone doesn't answer the question a business reviewer actually
+asks: *how much money?* Computed live from the same `transactions.amount` column every
+other endpoint reads:
+
+- **₹5,12,944 recovered** out of ₹6,99,910 in total failed-payment value across the 91
+  seeded transactions (62.6% recovery rate, same number shown elsewhere — this just adds
+  the rupee figure behind it).
+- **₹1,13,477** sits in `promise_to_pay` — explicitly *not* counted as recovered, since
+  nothing has actually been paid yet.
+
+**The "at scale" projection is clearly separated and labeled, not blended into the
+measured numbers**: it applies this dataset's own measured 62.6% recovery rate (not an
+invented target) to a hypothetical 1,000-failed-payments/month volume at this dataset's
+own average transaction size (₹7,691), and states outright that it's a projection, not a
+measured result — because this pipeline has never run against a real business's live
+failed-payment stream (see "Read this first" above). The point isn't to claim a specific
+business outcome; it's to show the mechanism for translating a recovery rate into a
+number a CFO would actually look at, using only numbers this dataset already produces.
+
+---
+
 ## "Does this learn?" — yes, retry timing does; the strategy table never does
 
 The strategy table is deliberately fixed and never LLM-chosen (see above) — that's a
@@ -511,6 +535,7 @@ frontend/
       SystemGuarantees.jsx        — live-computed "not a black box" numbers
       CauseBreakdownTable.jsx
       AdaptiveInsight.jsx         — the outcome-data-suggests panel
+      RevenueImpact.jsx           — rupee-value recovery + labeled scale projection
       MessageShowcase.jsx         — real Hinglish output vs generic baseline
       LiveDemo.jsx                — real webhook + simulated-response trigger
       KanbanBoard.jsx             — 5-column board, live from /api/transactions

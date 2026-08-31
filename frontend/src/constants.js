@@ -37,3 +37,12 @@ export function formatAmount(amountPaise, currency = 'INR') {
   const symbol = currency === 'INR' ? 'Rs.' : currency + ' '
   return `${symbol}${amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
 }
+
+// For values already denominated in rupees (e.g. /api/metrics/revenue-impact,
+// which sums transactions.amount/100 server-side) — no /100 division here.
+export function formatRupees(amountRupees, { decimals = 0 } = {}) {
+  return `Rs. ${amountRupees.toLocaleString('en-IN', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}`
+}

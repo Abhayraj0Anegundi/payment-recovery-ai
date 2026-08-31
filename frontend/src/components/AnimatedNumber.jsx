@@ -11,6 +11,11 @@ import { useEffect, useRef, useState } from 'react'
 export default function AnimatedNumber({
   value, decimals = 0, suffix = '', prefix = '', durationMs = 700,
   flashClassName = 'text-brand-600 scale-110',
+  // Opt-in Indian-style thousands grouping (e.g. 5,12,944 not 512944) — off
+  // by default since most callers show small counts/percentages where
+  // grouping doesn't apply; large rupee figures (RevenueImpact.jsx) pass
+  // this explicitly.
+  groupDigits = false,
 }) {
   const numericTarget = typeof value === 'number' ? value : parseFloat(value)
   const isNumeric = !Number.isNaN(numericTarget)
@@ -63,7 +68,11 @@ export default function AnimatedNumber({
         flash ? flashClassName : 'scale-100'
       }`}
     >
-      {prefix}{display.toFixed(decimals)}{suffix}
+      {prefix}
+      {groupDigits
+        ? display.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+        : display.toFixed(decimals)}
+      {suffix}
     </span>
   )
 }
