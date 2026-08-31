@@ -1,4 +1,5 @@
 import AnimatedNumber from './AnimatedNumber'
+import SyntheticDataBadge from './SyntheticDataBadge'
 
 function StatCard({ label, value, decimals = 0, suffix = '', sublabel, tone = 'default', featured = false }) {
   const toneClasses = {
@@ -36,6 +37,7 @@ function StatCard({ label, value, decimals = 0, suffix = '', sublabel, tone = 'd
       {sublabel && (
         <div className={`text-xs mt-1 ${featured ? 'text-brand-100/80' : 'text-slate-500'}`}>{sublabel}</div>
       )}
+      {featured && <SyntheticDataBadge className="mt-2 !bg-white/10 !text-brand-100 !ring-white/20" />}
     </div>
   )
 }

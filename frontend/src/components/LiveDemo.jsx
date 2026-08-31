@@ -386,10 +386,12 @@ export default function LiveDemo({ onResolved }) {
             {isAwaitingResponse && (
               <div>
                 <div className="text-[11px] font-medium text-slate-500 mb-1">
-                  ③ Your move — simulate how the customer responds to the message above
+                  ③ Your move — <span className="text-slate-300">you</span> tell the system how the
+                  customer responded (this isn't a real payment webhook — Razorpay isn't watching
+                  this link for a real confirmation, you're standing in for the customer)
                 </div>
                 <div className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">
-                  Simulate what the customer does next
+                  Pretend to be the customer and pick a response
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -398,7 +400,7 @@ export default function LiveDemo({ onResolved }) {
                     className="text-sm font-semibold bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-full px-4 py-1.5 hover:from-teal-400 hover:to-teal-500 disabled:opacity-70 inline-flex items-center gap-1.5 shadow-md shadow-teal-600/30"
                   >
                     {pendingResponse === 'paid' && <Spinner />}
-                    Customer paid
+                    Tell it: "customer paid"
                   </button>
                   <button
                     onClick={() => respond('promise_to_pay')}
@@ -406,7 +408,7 @@ export default function LiveDemo({ onResolved }) {
                     className="text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-full px-4 py-1.5 hover:from-amber-400 hover:to-amber-500 disabled:opacity-70 inline-flex items-center gap-1.5 shadow-md shadow-amber-600/30"
                   >
                     {pendingResponse === 'promise_to_pay' && <Spinner />}
-                    Promise to pay
+                    Tell it: "promised to pay"
                   </button>
                   <button
                     onClick={() => respond('ignored')}
@@ -414,7 +416,7 @@ export default function LiveDemo({ onResolved }) {
                     className="text-sm font-semibold bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-full px-4 py-1.5 hover:from-rose-400 hover:to-rose-500 disabled:opacity-70 inline-flex items-center gap-1.5 shadow-md shadow-rose-600/30"
                   >
                     {pendingResponse === 'ignored' && <Spinner />}
-                    Customer ignored
+                    Tell it: "ignored"
                   </button>
                 </div>
               </div>

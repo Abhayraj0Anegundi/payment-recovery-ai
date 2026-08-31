@@ -28,7 +28,7 @@ from gemini_client import classify_ambiguous_cause, generate_hinglish_message, f
 from razorpay_client import (
     create_payment_link, mock_payment_link, RazorpayCallError, RazorpayQuotaExhausted,
 )
-from adaptive import compute_adaptive_delay
+from adaptive import compute_adaptive_delay, MIN_SAMPLE_SIZE
 
 BACKEND_DIR = Path(__file__).parent
 DEFAULT_DB_PATH = BACKEND_DIR / "recovery.db"
@@ -114,6 +114,40 @@ def _live_recovery_rate_for_cause(conn, cause: str) -> tuple[float | None, int]:
     if total == 0:
         return None, 0
     return (recovered / total * 100.0), total
+
+
+def _live_recovery_rates_all_causes(conn, min_sample_size: int) -> dict[str, float]:
+    """
+    Returns {cause: recovery_rate_pct} for every cause that currently has at
+    least `min_sample_size` resolved transactions — the live dataset
+    adaptive.compute_adaptive_delay ranks a single cause's rate against to
+    derive this run's quartile boundaries. One grouped query instead of
+    calling _live_recovery_rate_for_cause once per cause.
+    """
+    rows = conn.execute(
+        """
+        SELECT
+            latest.root_cause AS cause,
+            COUNT(*) AS total,
+            SUM(CASE WHEN t.status = 'recovered' THEN 1 ELSE 0 END) AS recovered
+        FROM transactions t
+        JOIN (
+            SELECT d1.transaction_id, d1.root_cause
+            FROM decisions d1
+            INNER JOIN (
+                SELECT transaction_id, MAX(attempt_number) AS max_attempt
+                FROM decisions GROUP BY transaction_id
+            ) d2 ON d1.transaction_id = d2.transaction_id AND d1.attempt_number = d2.max_attempt
+        ) latest ON latest.transaction_id = t.id
+        WHERE t.status IN ('recovered', 'promise_to_pay', 'needs_human')
+        GROUP BY latest.root_cause
+        """
+    ).fetchall()
+    return {
+        r[0]: (r[2] or 0) / r[1] * 100.0
+        for r in rows
+        if r[1] >= min_sample_size
+    }
 
 
 def _audit(conn, transaction_id: int, actor: str, action: str, reasoning: str):
@@ -228,7 +262,8 @@ def process_one_attempt(conn, txn: dict, attempt_number: int) -> bool:
             delay_hours, delay_reasoning = None, None
         else:
             recovery_rate, sample_size = _live_recovery_rate_for_cause(conn, decision["cause"])
-            delay_result = compute_adaptive_delay(recovery_rate, sample_size)
+            all_cause_rates = _live_recovery_rates_all_causes(conn, MIN_SAMPLE_SIZE)
+            delay_result = compute_adaptive_delay(recovery_rate, sample_size, all_cause_rates)
             delay_hours = delay_result["delay_hours"]
             delay_reasoning = delay_result["reasoning"]
 

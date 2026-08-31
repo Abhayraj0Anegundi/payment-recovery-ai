@@ -1,4 +1,5 @@
 import { CAUSE_LABELS } from '../constants'
+import SyntheticDataBadge from './SyntheticDataBadge'
 
 export default function CauseBreakdownTable({ byCause }) {
   if (!byCause) return null
@@ -6,10 +7,11 @@ export default function CauseBreakdownTable({ byCause }) {
 
   return (
     <div className="panel rounded-2xl overflow-hidden shadow-lg shadow-black/20">
-      <div className="px-5 py-3 border-b border-white/10">
+      <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between flex-wrap gap-2">
         <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
           Per-Cause Breakdown
         </div>
+        <SyntheticDataBadge />
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">

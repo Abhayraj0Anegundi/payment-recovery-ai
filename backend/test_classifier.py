@@ -119,34 +119,74 @@ class TestAdaptiveDelay(unittest.TestCase):
     """
     Guards the one place outcome data is allowed to change behavior
     (backend/adaptive.py) — never the strategy table, only retry timing.
+
+    v2: tier boundaries are quartiles of the CURRENT dataset's cause
+    recovery rates (all_cause_rates), not fixed constants — so these tests
+    exercise ranking against a realistic 4-cause distribution rather than
+    checking a single rate against hardcoded thresholds.
     """
 
-    def test_high_recovery_rate_gives_short_delay(self):
-        r = compute_adaptive_delay(80.0, sample_size=20)
+    # A realistic 4-cause distribution, matching the actual shape seen in
+    # recovery.db (insufficient_funds worst, bank_timeout best).
+    SAMPLE_RATES = {
+        "insufficient_funds": 38.1,
+        "card_declined": 63.6,
+        "3ds_dropoff": 68.2,
+        "bank_timeout": 76.9,
+    }
+
+    def test_top_quartile_cause_gets_short_delay(self):
+        r = compute_adaptive_delay(76.9, sample_size=26, all_cause_rates=self.SAMPLE_RATES)
         self.assertEqual(r["delay_hours"], 1.0)
 
-    def test_low_recovery_rate_gives_long_delay(self):
-        r = compute_adaptive_delay(20.0, sample_size=20)
+    def test_bottom_quartile_cause_gets_long_delay(self):
+        r = compute_adaptive_delay(38.1, sample_size=21, all_cause_rates=self.SAMPLE_RATES)
         self.assertEqual(r["delay_hours"], 48.0)
 
-    def test_delay_is_monotonically_non_increasing_as_recovery_rate_rises(self):
-        rates = [5.0, 25.0, 45.0, 65.0, 85.0]
-        delays = [compute_adaptive_delay(r, sample_size=50)["delay_hours"] for r in rates]
+    def test_delay_is_monotonically_non_increasing_as_rank_rises(self):
+        # Same 4 rates, evaluated worst-to-best — delay should never increase.
+        ordered = sorted(self.SAMPLE_RATES.values())
+        delays = [
+            compute_adaptive_delay(r, sample_size=20, all_cause_rates=self.SAMPLE_RATES)["delay_hours"]
+            for r in ordered
+        ]
         for earlier, later in zip(delays, delays[1:]):
             self.assertGreaterEqual(earlier, later)
 
     def test_insufficient_sample_size_uses_labeled_default_not_a_computed_rate(self):
-        r = compute_adaptive_delay(90.0, sample_size=MIN_SAMPLE_SIZE - 1)
+        r = compute_adaptive_delay(90.0, sample_size=MIN_SAMPLE_SIZE - 1, all_cause_rates=self.SAMPLE_RATES)
         self.assertEqual(r["tier_label"], "insufficient history")
         self.assertIn("resolved transaction", r["reasoning"])
 
     def test_none_recovery_rate_uses_default(self):
-        r = compute_adaptive_delay(None, sample_size=0)
+        r = compute_adaptive_delay(None, sample_size=0, all_cause_rates=self.SAMPLE_RATES)
+        self.assertEqual(r["tier_label"], "insufficient history")
+
+    def test_too_few_causes_to_rank_uses_default(self):
+        # Only 2 causes have data -- not enough to compute meaningful
+        # quartiles, so this must fall back rather than fabricate a ranking.
+        r = compute_adaptive_delay(60.0, sample_size=20, all_cause_rates={"bank_timeout": 76.9, "card_declined": 63.6})
+        self.assertEqual(r["tier_label"], "insufficient history")
+
+    def test_missing_all_cause_rates_uses_default(self):
+        r = compute_adaptive_delay(60.0, sample_size=20, all_cause_rates=None)
         self.assertEqual(r["tier_label"], "insufficient history")
 
     def test_reasoning_always_present_and_references_the_number(self):
-        r = compute_adaptive_delay(55.5, sample_size=10)
+        r = compute_adaptive_delay(55.5, sample_size=10, all_cause_rates={
+            "insufficient_funds": 30.0, "bank_timeout": 55.5, "3ds_dropoff": 60.0, "card_declined": 70.0,
+        })
         self.assertIn("55.5", r["reasoning"])
+
+    def test_boundaries_shift_with_a_different_dataset_shape(self):
+        # The whole point of v2: the SAME recovery rate (55%) can land in a
+        # different tier depending on what the rest of the dataset looks
+        # like — proving the boundary is derived from data, not hardcoded.
+        low_context = {"a": 10.0, "b": 20.0, "c": 30.0, "d": 55.0}  # 55 is the top here
+        high_context = {"a": 80.0, "b": 85.0, "c": 90.0, "d": 55.0}  # 55 is the bottom here
+        r_low_context = compute_adaptive_delay(55.0, sample_size=20, all_cause_rates=low_context)
+        r_high_context = compute_adaptive_delay(55.0, sample_size=20, all_cause_rates=high_context)
+        self.assertLess(r_low_context["delay_hours"], r_high_context["delay_hours"])
 
 
 if __name__ == "__main__":

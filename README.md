@@ -12,6 +12,39 @@ reported the way it actually happened.
 
 ---
 
+## Read this first: what's real, what's simulated, and why
+
+Three things a reviewer should know before looking at any number below, stated plainly
+instead of left to be discovered mid-review:
+
+1. **113 of 119 payment links (≈95%) in `recovery.db` are disclosed mocks, not real
+   Razorpay links.** Razorpay's test-mode API caps a business at 30 Payment Links,
+   non-resetting. That cap was hit partway through the batch, documented in full below —
+   6 links are genuinely real, verifiable in the Razorpay test dashboard, and prove the
+   integration works end-to-end. A second, smaller batch (`recovery_real.db`) exists
+   specifically to show 100% real links with zero mocking — see below.
+2. **Every recovery-rate number on this dashboard (62.6%, the per-cause breakdown, the
+   "Adaptive Insight" panel) is computed from *simulated* customer responses, not
+   measured real-world behavior.** `pipeline.py`'s `_OUTCOME_WEIGHTS` are hand-picked
+   probabilities (e.g. "a bank-timeout retry succeeds 55% of the time"), not something
+   discovered from real customers. The classify → decide → message → link pipeline is
+   100% real; whether a given simulated customer "pays" afterward is a weighted coin
+   flip. The dashboard now marks every recovery-rate figure with a **"simulated
+   outcomes"** badge so this is visible at the point of display, not just here.
+3. **The gap between causes (e.g. insufficient_funds recovering worse than
+   bank_timeout) is a real, stable property of the simulation weights, not a lucky
+   single run.** `backend/stability_check.py` re-runs the outcome simulation across 30
+   independent random seeds; the ordering (insufficient_funds < bank_timeout) held in
+   all 30. That doesn't make the *absolute* numbers (38.1%, 76.9%) real-world facts — it
+   means the *relative pattern* the dashboard highlights isn't sampling noise.
+
+None of this is a late-discovered flaw — it's a direct consequence of building a batch
+demo without a live payments business generating real failure/recovery data, which no
+hackathon submission in this position actually has. The rest of this README is written
+assuming a reader has already seen this section.
+
+---
+
 ## What this is not
 
 - Not a generic "your payment failed, please retry" bot.
@@ -357,6 +390,20 @@ won't help — give the customer time). The exact recovery-rate query and result
 are logged to `audit_log` (`action='compute_adaptive_delay'`) for every attempt, so the
 number behind each suggestion is always checkable, not asserted.
 
+**The tier boundaries are computed live too, not hardcoded** (as of the v2 rewrite in
+`adaptive.py`). Earlier this used fixed thresholds (e.g. "recovery rate ≥70% → 1h delay")
+— reasonable guesses, but honestly just an if/else wearing an "adaptive" label, since the
+*thresholds themselves* never changed. `compute_adaptive_delay()` now takes every cause's
+live recovery rate and computes this run's 25th/50th/75th percentile boundaries from that
+actual distribution — a cause lands in "top quartile" because it's genuinely in the top
+25% of *this dataset's* causes right now, not because it cleared a number someone typed
+in. `test_classifier.py::test_boundaries_shift_with_a_different_dataset_shape` proves this
+directly: the identical 55% recovery rate lands in a different tier depending on what the
+rest of the dataset looks like. This is still not a trained model — nothing converges,
+there's no loss function — and the code says so rather than overclaiming "machine
+learning." It's honestly "data-derived thresholds," which is a real, checkable step up
+from a fixed lookup table.
+
 ```
 GET /api/metrics/adaptive-insight
 ```
@@ -397,7 +444,10 @@ backend/
   schema.sql           — SQLite DDL
   seed.py              — synthetic batch generator
   classifier.py        — rule-based cause/strategy lookup (pure functions)
-  test_classifier.py   — unit tests (15 tests)
+  adaptive.py           — quartile-derived retry-delay timing (never touches strategy)
+  test_classifier.py   — unit tests (24 tests)
+  stability_check.py   — 30-seed re-run proving the recovery-rate ordering
+                          isn't a lucky single sample (see "Read this first")
   gemini_client.py     — the 2 narrow Gemini prompts + JSON parsing/fallback
   razorpay_client.py   — real Payment Link creation + disclosed mock fallback
   pipeline.py          — batch orchestrator, 3-attempt loop, audit logging
@@ -409,13 +459,19 @@ frontend/
   src/
     api.js                        — thin fetch wrapper
     constants.js                  — shared labels/colors
+    simulateActivity.js           — Refresh-triggered live traffic simulation
     components/
       MetricsHeader.jsx           — recovery rate, funnel, needs-human count
       SystemGuarantees.jsx        — live-computed "not a black box" numbers
       CauseBreakdownTable.jsx
+      AdaptiveInsight.jsx         — the outcome-data-suggests panel
       MessageShowcase.jsx         — real Hinglish output vs generic baseline
+      LiveDemo.jsx                — real webhook + simulated-response trigger
       KanbanBoard.jsx             — 5-column board, live from /api/transactions
       TransactionDetailModal.jsx  — full decision + message + audit trail
+      AnimatedNumber.jsx          — count-up/flash effect for live-updating stats
+      SyntheticDataBadge.jsx      — "simulated outcomes" disclosure, shown
+                                     wherever a recovery-rate number appears
     App.jsx
 ```
 
