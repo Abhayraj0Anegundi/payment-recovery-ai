@@ -565,6 +565,22 @@ def revenue_impact():
                 "against a real business's live failed-payment stream."
             ),
         },
+        # Counterfactual: what a business gets with NO recovery pipeline at
+        # all. Not a modeled estimate -- a failed payment with zero follow-up
+        # is, by definition, zero recovered. This isn't "the pipeline is
+        # amazing," it's the baseline every recovery product is compared
+        # against, stated plainly rather than left implicit.
+        "counterfactual": {
+            "label": "Without any recovery pipeline",
+            "recovered_rupees": 0,
+            "lost_rupees": round(total_failed_rs, 2),
+            "note": (
+                "A failed payment with no follow-up stays failed — this isn't a model or an "
+                "assumption, it's what 'no recovery pipeline' means by definition. The "
+                f"Rs. {recovered_rs:,.0f} actually recovered above is the entire gap between "
+                "this row and the measured numbers."
+            ),
+        },
     })
 
 

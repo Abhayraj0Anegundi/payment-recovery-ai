@@ -442,6 +442,12 @@ failed-payment stream (see "Read this first" above). The point isn't to claim a 
 business outcome; it's to show the mechanism for translating a recovery rate into a
 number a CFO would actually look at, using only numbers this dataset already produces.
 
+**The panel also shows the counterfactual explicitly** — "without any recovery pipeline"
+vs. "with it," as two comparison bars. The "without" number isn't modeled or estimated:
+a failed payment with zero follow-up stays failed by definition, so the baseline is ₹0,
+stated as such rather than left implicit. The entire ₹5,12,944 gap between the two bars
+is what this pipeline is actually being evaluated against.
+
 ---
 
 ## "Does this learn?" — yes, retry timing does; the strategy table never does

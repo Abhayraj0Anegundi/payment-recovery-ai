@@ -3,7 +3,7 @@ import SyntheticDataBadge from './SyntheticDataBadge'
 
 export default function RevenueImpact({ impact }) {
   if (!impact) return null
-  const { measured, projection } = impact
+  const { measured, projection, counterfactual } = impact
 
   return (
     <div className="panel rounded-2xl overflow-hidden shadow-lg shadow-black/20">
@@ -66,6 +66,38 @@ export default function RevenueImpact({ impact }) {
             <div className="text-xs text-slate-500 mt-1">across {measured.transaction_count} transactions</div>
           </div>
         </div>
+
+        {/* Counterfactual: with vs. without this pipeline, made visual so
+            the gap is felt, not just read as text. */}
+        {counterfactual && (
+          <div className="mb-5">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+              {counterfactual.label} vs. with it
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500 w-28 shrink-0">Without pipeline</span>
+                <div className="flex-1 h-6 bg-white/5 rounded-full overflow-hidden ring-1 ring-white/10">
+                  <div className="h-full w-[2%] bg-rose-500/60 rounded-full" />
+                </div>
+                <span className="text-xs font-semibold text-rose-300 w-20 text-right shrink-0">₹0</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500 w-28 shrink-0">With this pipeline</span>
+                <div className="flex-1 h-6 bg-white/5 rounded-full overflow-hidden ring-1 ring-white/10">
+                  <div
+                    className="h-full bg-gradient-to-r from-teal-500 to-teal-400 rounded-full transition-[width] duration-700 ease-out"
+                    style={{ width: `${Math.max(6, measured.recovery_rate_pct)}%` }}
+                  />
+                </div>
+                <span className="text-xs font-semibold text-teal-300 w-20 text-right shrink-0">
+                  ₹{measured.recovered_rupees.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">{counterfactual.note}</p>
+          </div>
+        )}
 
         {/* Projection: clearly separated, clearly labeled as hypothetical */}
         <div className="rounded-xl bg-brand-500/[0.07] ring-1 ring-brand-400/20 p-4">
