@@ -408,13 +408,29 @@ def process_transaction(conn, txn: dict, rng: random.Random):
         _audit(conn, txn_id, "system", "escalate_to_needs_human", "Attempt loop exhausted without terminal state; safety escalation.")
 
 
-def record_customer_response(conn, txn_id: int, attempt_number: int, response: str, actor: str = "customer") -> bool:
+def record_customer_response(
+    conn, txn_id: int, attempt_number: int, response: str, actor: str = "customer", verified_real: bool = False,
+) -> bool:
     """
     Applies a customer response (paid / ignored / promise_to_pay) to a
     transaction that has just had a message sent for `attempt_number`, and
     updates status accordingly. Same function whether the response came
-    from the batch pipeline's weighted simulation or a live "customer
-    responded" demo action — one code path either way.
+    from the batch pipeline's weighted simulation, a live "customer
+    responded" demo button click, or a real cryptographically-verified
+    Razorpay webhook — one code path either way, but the audit trail
+    distinguishes which.
+
+    `verified_real=True` is set ONLY by api.py's real /api/webhook/razorpay
+    handler, after HMAC-SHA256 signature verification against the actual
+    Razorpay webhook secret has already succeeded — it changes the
+    audit_log action/reasoning from "simulated_response" to
+    "verified_real_response" so a reviewer can tell, from the audit trail
+    alone, which transactions were resolved by an actual payment
+    confirmation vs. a presenter clicking a demo button. The `outcomes`
+    table's `simulated_response` column name predates this distinction and
+    is shared by both paths (schema-level rename would be a larger
+    migration than this fix warrants) — the audit_log is the source of
+    truth for "was this real."
 
     Returns True if this response resolved the transaction to a terminal
     state (recovered / promise_to_pay / needs_human via cap), False if it
@@ -423,14 +439,19 @@ def record_customer_response(conn, txn_id: int, attempt_number: int, response: s
     if response not in ("paid", "ignored", "promise_to_pay"):
         raise ValueError(f"response must be one of paid/ignored/promise_to_pay, got {response!r}")
 
+    action = "verified_real_response" if verified_real else (
+        "simulated_response" if actor == "customer" else "customer_response"
+    )
+    prefix = "Cryptographically-verified real" if verified_real else "Customer"
+
     with conn:
         conn.execute(
             "INSERT INTO outcomes (transaction_id, simulated_response) VALUES (?, ?)",
             (txn_id, response),
         )
         _audit(
-            conn, txn_id, actor, "simulated_response" if actor == "customer" else "customer_response",
-            f"Customer response to attempt {attempt_number}: '{response}'.",
+            conn, txn_id, actor, action,
+            f"{prefix} response to attempt {attempt_number}: '{response}'.",
         )
 
         if response == "paid":

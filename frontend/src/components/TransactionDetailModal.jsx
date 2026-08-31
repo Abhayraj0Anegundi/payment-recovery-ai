@@ -40,8 +40,16 @@ export default function TransactionDetailModal({ transactionId, onClose }) {
             <div className="sticky top-0 bg-slate-900/95 backdrop-blur border-b border-white/10 px-6 py-4 flex items-center justify-between">
               <div>
                 <div className="text-xs text-slate-500 font-mono">Transaction #{detail.transaction.id}</div>
-                <h2 className="text-lg font-display font-bold text-white">
+                <h2 className="text-lg font-display font-bold text-white flex items-center gap-2">
                   {detail.transaction.customer_name}
+                  {detail.audit_log.some((a) => a.action === 'verified_real_response') && (
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-wide bg-teal-400/15 text-teal-300 ring-1 ring-teal-400/40 rounded-full px-2 py-0.5"
+                      title="Resolved by a real, cryptographically-verified Razorpay webhook (HMAC-SHA256 signature checked) — not a demo button click."
+                    >
+                      ✓ Real webhook confirmed
+                    </span>
+                  )}
                 </h2>
               </div>
               <button
@@ -127,20 +135,35 @@ export default function TransactionDetailModal({ transactionId, onClose }) {
               <section>
                 <h3 className="text-sm font-semibold text-slate-300 mb-2">Audit Trail</h3>
                 <div className="border border-white/10 rounded-lg divide-y divide-white/10 bg-black/20">
-                  {detail.audit_log.map((a) => (
-                    <div key={a.id} className="px-3 py-2 text-xs flex items-start gap-2">
-                      <span className="text-slate-500 font-mono shrink-0 w-32">{a.timestamp}</span>
-                      <span
-                        className={`shrink-0 rounded-full px-1.5 py-0.5 font-medium ${
-                          ACTOR_STYLES[a.actor] || 'bg-white/10 text-slate-300'
+                  {detail.audit_log.map((a) => {
+                    const isRealWebhook =
+                      a.action === 'razorpay_webhook_verified' || a.action === 'verified_real_response'
+                    return (
+                      <div
+                        key={a.id}
+                        className={`px-3 py-2 text-xs flex items-start gap-2 ${
+                          isRealWebhook ? 'bg-teal-400/[0.06]' : ''
                         }`}
                       >
-                        {a.actor}
-                      </span>
-                      <span className="shrink-0 font-medium text-slate-300 w-40">{a.action}</span>
-                      <span className="text-slate-500">{a.reasoning_string}</span>
-                    </div>
-                  ))}
+                        <span className="text-slate-500 font-mono shrink-0 w-32">{a.timestamp}</span>
+                        <span
+                          className={`shrink-0 rounded-full px-1.5 py-0.5 font-medium ${
+                            ACTOR_STYLES[a.actor] || 'bg-white/10 text-slate-300'
+                          }`}
+                        >
+                          {a.actor}
+                        </span>
+                        <span
+                          className={`shrink-0 font-medium w-40 ${
+                            isRealWebhook ? 'text-teal-300' : 'text-slate-300'
+                          }`}
+                        >
+                          {isRealWebhook && '🔒 '}{a.action}
+                        </span>
+                        <span className="text-slate-500">{a.reasoning_string}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </section>
             </div>

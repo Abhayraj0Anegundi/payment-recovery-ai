@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import os
 import random
 import sqlite3
 from pathlib import Path
@@ -23,10 +24,17 @@ from pathlib import Path
 from flask import Flask, jsonify, g, request
 from flask_cors import CORS
 
+import re
+
 import pipeline
+from razorpay_webhook import verify_signature, WebhookSecretNotConfigured
 
 BACKEND_DIR = Path(__file__).parent
 DEFAULT_DB_PATH = BACKEND_DIR / "recovery.db"
+
+# Matches the reference_id format pipeline.py generates for every real/mocked
+# payment link: "{run_id}-txn{transaction_id}-attempt{attempt_number}".
+_REFERENCE_ID_RE = re.compile(r"txn(\d+)-attempt(\d+)")
 
 app = Flask(__name__)
 CORS(app)
@@ -210,6 +218,150 @@ def trigger_customer_response(txn_id):
     detail["resolved"] = resolved
     detail["next_attempt_started"] = next_attempt_started
     return jsonify(detail)
+
+
+@app.route("/api/webhook/razorpay", methods=["POST"])
+def razorpay_webhook():
+    """
+    Real Razorpay webhook receiver — genuinely different from
+    /api/transactions/<id>/respond above, which is a presenter clicking a
+    button to SIMULATE a customer response. This endpoint receives an
+    actual signed HTTP callback FROM Razorpay when a real payment on one
+    of this pipeline's real Payment Links is completed.
+
+    Configured in the Razorpay dashboard (Settings -> Webhooks) pointing
+    at this URL, subscribed to the `payment_link.paid` event, with a
+    webhook secret set in RAZORPAY_WEBHOOK_SECRET (backend/.env) matching
+    what's configured there.
+
+    Verification, in order, each step logged to webhook_deliveries even on
+    failure so a rejected/forged delivery attempt is still auditable:
+      1. HMAC-SHA256 signature over the raw body must match
+         X-Razorpay-Signature, using the shared webhook secret (see
+         razorpay_webhook.verify_signature). Reject with 401 if not --
+         this is a real cryptographic check, not a formality.
+      2. Event type must be one this pipeline understands
+         (payment_link.paid). Others are acknowledged 200 (per Razorpay's
+         own retry-avoidance guidance) but not processed.
+      3. x-razorpay-event-id must not have been processed before --
+         Razorpay retries webhook deliveries that don't get a fast 200,
+         so replays must not double-record a recovery.
+      4. The payment link's reference_id must parse back to a transaction
+         this pipeline created and must currently be in status='contacted'
+         -- an unrecognized or already-resolved reference_id is logged and
+         acknowledged, not silently ignored, but does not call into the
+         pipeline a second time.
+
+    On success, calls the SAME pipeline.record_customer_response() the
+    Live Demo's "customer paid" button calls -- but with actor="customer"
+    and response="paid" driven by a cryptographically verified real event,
+    not a click. Same downstream logic (status update, audit row,
+    auto-advance to next attempt is N/A here since 'paid' is terminal).
+    """
+    raw_body = request.get_data()  # raw bytes, required for signature verification
+    signature = request.headers.get("X-Razorpay-Signature")
+    event_id = request.headers.get("x-razorpay-event-id", "")
+
+    db = get_db()
+
+    try:
+        sig_valid = verify_signature(raw_body, signature)
+    except WebhookSecretNotConfigured as e:
+        # Distinct from an invalid signature: this is a deployment/config
+        # problem, not a forged request. 500, not 401, and logged as such.
+        return jsonify({"error": str(e)}), 500
+
+    body = request.get_json(silent=True) or {}
+    event_type = body.get("event", "unknown")
+
+    if not sig_valid:
+        with db:
+            db.execute(
+                """INSERT OR IGNORE INTO webhook_deliveries
+                   (event_id, event_type, transaction_id, signature_valid, raw_payload)
+                   VALUES (?, ?, ?, 0, ?)""",
+                (event_id or f"unsigned-{os.urandom(4).hex()}", event_type, None, raw_body.decode("utf-8", "replace")),
+            )
+        # 401, not 200 -- an invalid signature is a real rejection, not
+        # something to acknowledge and move on from.
+        return jsonify({"error": "invalid webhook signature"}), 401
+
+    # Signature is valid from here on -- this genuinely came from Razorpay
+    # (or someone with the webhook secret).
+    already_processed = db.execute(
+        "SELECT 1 FROM webhook_deliveries WHERE event_id = ?", (event_id,)
+    ).fetchone() if event_id else None
+
+    if already_processed:
+        return jsonify({"status": "already_processed", "event_id": event_id}), 200
+
+    if event_type != "payment_link.paid":
+        with db:
+            db.execute(
+                """INSERT OR IGNORE INTO webhook_deliveries
+                   (event_id, event_type, transaction_id, signature_valid, raw_payload)
+                   VALUES (?, ?, NULL, 1, ?)""",
+                (event_id or f"noid-{os.urandom(4).hex()}", event_type, raw_body.decode("utf-8", "replace")),
+            )
+        return jsonify({"status": "ignored", "reason": f"event type '{event_type}' not handled"}), 200
+
+    entity = body.get("payload", {}).get("payment_link", {}).get("entity", {})
+    reference_id = entity.get("reference_id", "") or ""
+    match = _REFERENCE_ID_RE.search(reference_id)
+
+    if not match:
+        with db:
+            db.execute(
+                """INSERT OR IGNORE INTO webhook_deliveries
+                   (event_id, event_type, transaction_id, signature_valid, raw_payload)
+                   VALUES (?, ?, NULL, 1, ?)""",
+                (event_id or f"noid-{os.urandom(4).hex()}", event_type, raw_body.decode("utf-8", "replace")),
+            )
+        return jsonify({"status": "ignored", "reason": f"reference_id '{reference_id}' not recognized"}), 200
+
+    txn_id, attempt_number = int(match.group(1)), int(match.group(2))
+    txn_row = db.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+
+    with db:
+        db.execute(
+            """INSERT OR IGNORE INTO webhook_deliveries
+               (event_id, event_type, transaction_id, signature_valid, raw_payload)
+               VALUES (?, ?, ?, 1, ?)""",
+            (event_id or f"noid-{os.urandom(4).hex()}", event_type, txn_id, raw_body.decode("utf-8", "replace")),
+        )
+        db.execute(
+            "INSERT INTO audit_log (transaction_id, actor, action, reasoning_string) VALUES (?, ?, ?, ?)",
+            (txn_id, "system", "razorpay_webhook_verified",
+             f"Received and cryptographically verified payment_link.paid webhook "
+             f"(event_id={event_id}, reference_id={reference_id}). Signature checked "
+             f"via HMAC-SHA256 against RAZORPAY_WEBHOOK_SECRET, not merely trusted."),
+        )
+
+    if txn_row is None:
+        return jsonify({"status": "ignored", "reason": f"no transaction #{txn_id}"}), 200
+
+    txn = dict(txn_row)
+    if txn["status"] != "contacted":
+        # Already resolved (e.g. via the batch simulation, or a duplicate
+        # real payment on the same link) -- log that this arrived but don't
+        # call record_customer_response again, which would double-count.
+        with db:
+            db.execute(
+                "INSERT INTO audit_log (transaction_id, actor, action, reasoning_string) VALUES (?, ?, ?, ?)",
+                (txn_id, "system", "razorpay_webhook_no_op",
+                 f"payment_link.paid received for transaction #{txn_id}, but status is "
+                 f"already '{txn['status']}' (not 'contacted') -- not reprocessed."),
+            )
+        return jsonify({"status": "no_op", "transaction_status": txn["status"]}), 200
+
+    resolved = pipeline.record_customer_response(
+        db, txn_id, attempt_number, "paid", actor="customer", verified_real=True
+    )
+
+    detail = _load_transaction_detail(db, txn_id)
+    detail["resolved"] = resolved
+    detail["source"] = "real_razorpay_webhook"
+    return jsonify(detail), 200
 
 
 def _load_transaction_detail(db, txn_id):

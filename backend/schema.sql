@@ -62,7 +62,23 @@ CREATE TABLE outcomes (
     recorded_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Real Razorpay webhook deliveries (payment_link.paid etc). Razorpay retries
+-- undelivered/slow-acked webhooks, so event_id is stored to make delivery
+-- idempotent — a retried event is acknowledged 200 but not reprocessed.
+-- Distinct from `outcomes`, which records the resulting business outcome;
+-- this table records the raw delivery itself for audit/replay purposes.
+CREATE TABLE webhook_deliveries (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id         TEXT NOT NULL UNIQUE,      -- Razorpay's x-razorpay-event-id
+    event_type       TEXT NOT NULL,              -- e.g. 'payment_link.paid'
+    transaction_id   INTEGER REFERENCES transactions(id),
+    signature_valid  INTEGER NOT NULL,           -- 0/1, always logged even on failure
+    raw_payload      TEXT NOT NULL,
+    received_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX idx_decisions_txn ON decisions(transaction_id);
 CREATE INDEX idx_messages_txn ON messages(transaction_id);
 CREATE INDEX idx_audit_txn ON audit_log(transaction_id);
 CREATE INDEX idx_outcomes_txn ON outcomes(transaction_id);
+CREATE INDEX idx_webhook_deliveries_event ON webhook_deliveries(event_id);

@@ -179,6 +179,51 @@ total the moment anyone clicks Refresh. If you want to reproduce the exact docum
 numbers, don't click Refresh — the API returns the current live state on page load
 without it, and the numbers below match that initial state.
 
+### A real Razorpay webhook, not another button click
+
+Everything above — including the Live Demo's "Customer paid" response — is either
+simulated or presenter-triggered. `POST /api/webhook/razorpay` (`backend/api.py`,
+`backend/razorpay_webhook.py`) closes that gap with a genuinely different mechanism: a
+real Razorpay webhook receiver with actual HMAC-SHA256 signature verification, exactly
+matching [Razorpay's documented scheme](https://razorpay.com/docs/webhooks/validate-test/)
+— the `X-Razorpay-Signature` header must be the correct HMAC-SHA256 hex digest of the raw
+request body, keyed with the shared webhook secret. This is checked with
+`hmac.compare_digest` (constant-time, not `==`) against a secret only Razorpay (or someone
+holding it) has.
+
+**What this proves, concretely**: subscribe this endpoint to `payment_link.paid` in the
+Razorpay dashboard for any of the 6 real Payment Links this pipeline creates, and when
+that link is actually paid, Razorpay calls this endpoint with a payload only it could
+have signed correctly. The handler parses the link's `reference_id` back to the exact
+transaction/attempt that created it, and calls the *same*
+`pipeline.record_customer_response()` the Live Demo button calls — but with
+`verified_real=True`, which changes the audit_log action from `simulated_response` to
+`verified_real_response` specifically so a reviewer can tell, from the audit trail alone,
+which transactions were resolved by a real payment vs. a demo click. The dashboard shows
+this as a `✓ Real webhook confirmed` badge on the transaction detail modal.
+
+**Why this isn't demonstrated live end-to-end in the video**: doing so requires this
+machine to be reachable from the public internet (a tunnel like ngrok, plus configuring
+the tunnel's URL in the Razorpay dashboard) for the duration of judging — a fragile
+external dependency that could silently die mid-demo. Rather than risk that, the endpoint
+was verified with a full test suite that constructs the exact payload shape and signature
+Razorpay's own docs specify and fires it at the real running server — not a mock of the
+verification logic, the actual `hmac`-based check, exercised end-to-end:
+
+- ✅ Valid signature + real `payment_link.paid` payload → transaction correctly marked
+  `recovered`, audit trail shows `razorpay_webhook_verified` then `verified_real_response`
+- ✅ The same event replayed with the same `x-razorpay-event-id` → correctly idempotent
+  (`already_processed`, not double-recorded) — Razorpay retries webhook deliveries, so
+  this matters for correctness, not just neatness
+- ✅ Tampered payload (one field changed) reusing a valid signature from before the
+  tamper → **rejected with 401**, not silently accepted
+- ✅ No `X-Razorpay-Signature` header at all → **rejected with 401**
+- ✅ A garbage/random signature → **rejected with 401**
+
+Every delivery attempt — accepted or rejected — is logged to the `webhook_deliveries`
+table (`event_id`, `event_type`, `signature_valid`, raw payload), so even a rejected
+forgery attempt is auditable, not silently dropped.
+
 ---
 
 ## Running it
@@ -197,6 +242,7 @@ GEMINI_API_KEY=<your Gemini API key>
 GEMINI_MODEL=gemini-3.5-flash-lite
 RAZORPAY_KEY_ID=<your Razorpay test key id>
 RAZORPAY_KEY_SECRET=<your Razorpay test key secret>
+RAZORPAY_WEBHOOK_SECRET=<webhook secret, only needed for /api/webhook/razorpay — see below>
 ```
 
 ### 2. Seed the batch
