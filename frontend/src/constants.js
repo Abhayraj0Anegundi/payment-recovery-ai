@@ -8,12 +8,13 @@ export const CAUSE_LABELS = {
 // Purely categorical cause colors — deliberately NOT amber (used elsewhere
 // as the "insight/attention" semantic color) or rose (used elsewhere as the
 // "needs_human/error" semantic color), so a cause tag never accidentally
-// reads as a severity signal.
+// reads as a severity signal. Dark-theme variant: translucent tinted fill
+// + matching ring instead of a solid light background.
 export const CAUSE_COLORS = {
-  insufficient_funds: 'bg-orange-100 text-orange-800 border-orange-200',
-  bank_timeout: 'bg-sky-100 text-sky-800 border-sky-200',
-  '3ds_dropoff': 'bg-violet-100 text-violet-800 border-violet-200',
-  card_declined: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200',
+  insufficient_funds: 'bg-orange-400/10 text-orange-300 ring-1 ring-orange-400/30',
+  bank_timeout: 'bg-sky-400/10 text-sky-300 ring-1 ring-sky-400/30',
+  '3ds_dropoff': 'bg-violet-400/10 text-violet-300 ring-1 ring-violet-400/30',
+  card_declined: 'bg-fuchsia-400/10 text-fuchsia-300 ring-1 ring-fuchsia-400/30',
 }
 
 export const STRATEGY_LABELS = {

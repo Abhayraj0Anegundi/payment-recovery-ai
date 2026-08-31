@@ -5,33 +5,33 @@ function TransactionCard({ txn, onClick, highlight, justChanged }) {
   return (
     <button
       onClick={() => onClick(txn.id)}
-      className={`w-full text-left border rounded-xl p-3 hover:shadow-md cursor-pointer
-        transition-all duration-700 ease-out
-        ${highlight ? 'border-rose-300 ring-2 ring-rose-200 bg-white' : 'border-slate-200'}
-        ${justChanged ? 'animate-card-arrive ring-2 ring-brand-300' : !highlight ? 'bg-white' : ''}
+      className={`w-full text-left border rounded-xl p-3 hover:shadow-lg hover:-translate-y-0.5 cursor-pointer
+        transition-all duration-300 ease-out bg-white/[0.03] hover:bg-white/[0.06]
+        ${highlight ? 'border-rose-400/50 ring-2 ring-rose-400/30' : 'border-white/10'}
+        ${justChanged ? 'animate-card-arrive ring-2 ring-brand-400/50' : ''}
       `}
     >
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs font-mono text-slate-400">#{txn.id}</span>
-        <span className="text-xs font-medium text-slate-600">
+        <span className="text-xs font-mono text-slate-500">#{txn.id}</span>
+        <span className="text-xs font-medium text-slate-300">
           {formatAmount(txn.amount, txn.currency)}
         </span>
       </div>
-      <div className="font-medium text-sm text-slate-800 mb-1.5">{txn.customer_name}</div>
+      <div className="font-medium text-sm text-slate-100 mb-1.5">{txn.customer_name}</div>
       {txn.latest_cause && (
         <span
-          className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded-full border mb-1.5 ${
-            CAUSE_COLORS[txn.latest_cause] || 'bg-slate-100 text-slate-700 border-slate-200'
+          className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded-full mb-1.5 ${
+            CAUSE_COLORS[txn.latest_cause] || 'bg-slate-500/10 text-slate-300 ring-1 ring-slate-500/30'
           }`}
         >
           {CAUSE_LABELS[txn.latest_cause] || txn.latest_cause}
         </span>
       )}
-      <div className="text-xs text-slate-400 mb-1">
+      <div className="text-xs text-slate-500 mb-1">
         Attempt {txn.attempt_count} / 3
       </div>
       {txn.latest_message && (
-        <p className="text-xs text-slate-500 line-clamp-2 mt-1.5 border-t border-slate-100 pt-1.5">
+        <p className="text-xs text-slate-400 line-clamp-2 mt-1.5 border-t border-white/10 pt-1.5">
           {txn.latest_message}
         </p>
       )}
@@ -76,14 +76,14 @@ export default function KanbanBoard({ transactions, onSelect, pinnedNeedsHumanId
         const items = byStatus[col.key] || []
         return (
           <div key={col.key} className="min-w-0">
-            <div className={`bg-white border border-slate-200 border-t-4 ${col.accent} rounded-2xl p-3 h-full`}>
+            <div className={`panel border-t-4 ${col.accent} rounded-2xl p-3 h-full shadow-lg shadow-black/20`}>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-display font-bold text-slate-700">{col.label}</h3>
+                <h3 className="text-sm font-display font-bold text-slate-200">{col.label}</h3>
                 <span
                   className={`text-xs font-semibold rounded-full px-2 py-0.5 transition-colors duration-300 ${
                     items.some((t) => justChangedIds.has(t.id))
-                      ? 'bg-brand-100 text-brand-700'
-                      : 'bg-slate-100 text-slate-600'
+                      ? 'bg-brand-400/20 text-brand-300'
+                      : 'bg-white/5 text-slate-400'
                   }`}
                 >
                   {items.length}
@@ -91,7 +91,7 @@ export default function KanbanBoard({ transactions, onSelect, pinnedNeedsHumanId
               </div>
               <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
                 {items.length === 0 && (
-                  <div className="text-xs text-slate-300 italic py-4 text-center">Empty</div>
+                  <div className="text-xs text-slate-600 italic py-4 text-center">Empty</div>
                 )}
                 {items.map((txn) => (
                   <TransactionCard

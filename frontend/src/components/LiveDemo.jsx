@@ -28,9 +28,9 @@ function randomPhone() {
 }
 
 const ACTOR_STYLES = {
-  system: 'bg-slate-100 text-slate-700',
-  llm: 'bg-violet-100 text-violet-700',
-  customer: 'bg-blue-100 text-blue-700',
+  system: 'bg-white/10 text-slate-300',
+  llm: 'bg-violet-400/15 text-violet-300',
+  customer: 'bg-brand-400/15 text-brand-300',
 }
 
 function Spinner() {
@@ -139,15 +139,18 @@ export default function LiveDemo({ onResolved }) {
   const isDone = txn && !isAwaitingResponse
 
   return (
-    <div className="bg-white border border-brand-200 rounded-2xl overflow-hidden shadow-sm shadow-brand-100">
-      <div className="px-5 py-3.5 border-b border-brand-100 bg-gradient-to-r from-brand-50 to-teal-50/60">
+    <div className="relative rounded-2xl overflow-hidden ring-1 ring-brand-400/30 shadow-xl shadow-brand-950/30 bg-gradient-to-br from-slate-900 to-slate-950">
+      <div className="relative px-5 py-3.5 border-b border-white/10 bg-gradient-to-r from-brand-600/20 to-teal-500/10">
         <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-brand-600 animate-pulse" />
-          <div className="text-xs font-semibold text-brand-700 uppercase tracking-wide">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-400" />
+          </span>
+          <div className="text-xs font-bold text-brand-300 uppercase tracking-widest">
             Live Demo — real webhook, real pipeline, right now
           </div>
         </div>
-        <p className="text-xs text-brand-500 mt-1">
+        <p className="text-xs text-slate-400 mt-1.5">
           This doesn't read from the pre-run batch. It POSTs a fresh payment.failed event to
           the real /api/webhook endpoint, which runs classify → decide → Razorpay link → Gemini
           message through the exact same pipeline.py functions the batch uses.
@@ -157,11 +160,11 @@ export default function LiveDemo({ onResolved }) {
       <div className="px-5 py-4 space-y-4">
         {!live && (
           <>
-            <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+            <div className="flex gap-1 bg-white/5 rounded-lg p-1 w-fit ring-1 ring-white/10">
               <button
                 onClick={() => setMode('preset')}
                 className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
-                  mode === 'preset' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+                  mode === 'preset' ? 'bg-white/10 text-white shadow-sm' : 'text-slate-400'
                 }`}
               >
                 Quick presets
@@ -169,7 +172,7 @@ export default function LiveDemo({ onResolved }) {
               <button
                 onClick={() => setMode('custom')}
                 className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
-                  mode === 'custom' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+                  mode === 'custom' ? 'bg-white/10 text-white shadow-sm' : 'text-slate-400'
                 }`}
               >
                 Build your own scenario
@@ -179,7 +182,7 @@ export default function LiveDemo({ onResolved }) {
             {mode === 'preset' && (
               <>
                 <div>
-                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                  <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">
                     Pick a failure scenario
                   </label>
                   <div className="flex flex-wrap gap-2 mt-2">
@@ -189,8 +192,8 @@ export default function LiveDemo({ onResolved }) {
                         onClick={() => setPresetIdx(i)}
                         className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
                           i === presetIdx
-                            ? 'bg-brand-600 text-white border-brand-600'
-                            : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300'
+                            ? 'bg-brand-500 text-white border-brand-500 shadow-md shadow-brand-500/30'
+                            : 'bg-white/5 text-slate-300 border-white/10 hover:border-brand-400/50'
                         }`}
                       >
                         {CAUSE_LABELS[p.failure_code] || p.failure_code}
@@ -201,7 +204,7 @@ export default function LiveDemo({ onResolved }) {
                 <button
                   onClick={triggerPreset}
                   disabled={loading}
-                  className="text-sm font-medium bg-brand-600 text-white rounded-full px-4 py-2 hover:bg-brand-700 disabled:opacity-70 inline-flex items-center gap-2"
+                  className="text-sm font-bold bg-gradient-to-r from-brand-500 to-brand-600 text-white rounded-full px-5 py-2.5 hover:from-brand-400 hover:to-brand-500 disabled:opacity-70 inline-flex items-center gap-2 shadow-lg shadow-brand-600/40 transition-all hover:-translate-y-0.5"
                 >
                   {loading && <Spinner />}
                   {loading ? 'Sending webhook…' : 'Trigger a real failed payment'}
@@ -217,54 +220,54 @@ export default function LiveDemo({ onResolved }) {
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-slate-500">Customer name</label>
+                    <label className="text-xs font-medium text-slate-400">Customer name</label>
                     <input
                       type="text"
                       value={customForm.name}
                       onChange={(e) => setCustomForm({ ...customForm, name: e.target.value })}
                       placeholder="e.g. Aditya Verma"
-                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                      className="w-full mt-1 text-sm bg-white/5 border border-white/10 text-slate-100 placeholder:text-slate-600 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-400/50"
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-500">Amount (Rs.)</label>
+                    <label className="text-xs font-medium text-slate-400">Amount (Rs.)</label>
                     <input
                       type="number"
                       min="1"
                       value={customForm.amount}
                       onChange={(e) => setCustomForm({ ...customForm, amount: e.target.value })}
                       placeholder="e.g. 2499"
-                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                      className="w-full mt-1 text-sm bg-white/5 border border-white/10 text-slate-100 placeholder:text-slate-600 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-400/50"
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-500">Failure reason</label>
+                    <label className="text-xs font-medium text-slate-400">Failure reason</label>
                     <select
                       value={customForm.failure_code}
                       onChange={(e) => setCustomForm({ ...customForm, failure_code: e.target.value })}
-                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                      className="w-full mt-1 text-sm bg-white/5 border border-white/10 text-slate-100 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-400/50"
                     >
                       {CUSTOM_FAILURE_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
+                        <option key={o.value} value={o.value} className="bg-slate-900">{o.label}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-500">Original payment method</label>
+                    <label className="text-xs font-medium text-slate-400">Original payment method</label>
                     <select
                       value={customForm.method}
                       onChange={(e) => setCustomForm({ ...customForm, method: e.target.value })}
-                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                      className="w-full mt-1 text-sm bg-white/5 border border-white/10 text-slate-100 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-400/50"
                     >
                       {METHOD_OPTIONS.map((m) => (
-                        <option key={m} value={m}>{m}</option>
+                        <option key={m} value={m} className="bg-slate-900">{m}</option>
                       ))}
                     </select>
                   </div>
                 </div>
                 {customForm.failure_code === 'other' && (
                   <div>
-                    <label className="text-xs font-medium text-slate-500">
+                    <label className="text-xs font-medium text-slate-400">
                       Gateway note (what the LLM will classify from)
                     </label>
                     <input
@@ -272,15 +275,15 @@ export default function LiveDemo({ onResolved }) {
                       value={customForm.note}
                       onChange={(e) => setCustomForm({ ...customForm, note: e.target.value })}
                       placeholder="e.g. Bank did not respond before session expired"
-                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                      className="w-full mt-1 text-sm bg-white/5 border border-white/10 text-slate-100 placeholder:text-slate-600 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-400/50"
                     />
                   </div>
                 )}
-                {formError && <p className="text-xs text-rose-600">{formError}</p>}
+                {formError && <p className="text-xs text-rose-400">{formError}</p>}
                 <button
                   onClick={triggerCustom}
                   disabled={loading}
-                  className="text-sm font-medium bg-brand-600 text-white rounded-full px-4 py-2 hover:bg-brand-700 disabled:opacity-70 inline-flex items-center gap-2"
+                  className="text-sm font-bold bg-gradient-to-r from-brand-500 to-brand-600 text-white rounded-full px-5 py-2.5 hover:from-brand-400 hover:to-brand-500 disabled:opacity-70 inline-flex items-center gap-2 shadow-lg shadow-brand-600/40 transition-all hover:-translate-y-0.5"
                 >
                   {loading && <Spinner />}
                   {loading ? 'Sending webhook…' : 'Trigger this transaction'}
@@ -291,7 +294,7 @@ export default function LiveDemo({ onResolved }) {
         )}
 
         {error && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg px-4 py-3">
+          <div className="bg-rose-950/40 border border-rose-500/30 text-rose-300 text-sm rounded-lg px-4 py-3">
             {error}
           </div>
         )}
@@ -300,16 +303,16 @@ export default function LiveDemo({ onResolved }) {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs text-slate-400 font-mono">
+                <div className="text-xs text-slate-500 font-mono">
                   Transaction #{txn.id} — created just now via webhook
                 </div>
-                <div className="font-semibold text-slate-800">
+                <div className="font-semibold text-slate-100">
                   {txn.customer_name} · {formatAmount(txn.amount, txn.currency)}
                 </div>
               </div>
               <span
                 key={`${txn.status}-${txn.attempt_count}`}
-                className="text-xs font-medium bg-slate-100 text-slate-600 rounded-full px-3 py-1 animate-card-arrive"
+                className="text-xs font-medium bg-white/10 text-slate-200 rounded-full px-3 py-1 animate-card-arrive ring-1 ring-white/10"
               >
                 {txn.status} · attempt {txn.attempt_count}/3
               </span>
@@ -317,7 +320,7 @@ export default function LiveDemo({ onResolved }) {
 
             {live.decisions.map((d, i) => (
               <div key={d.id}>
-                <div className="text-[11px] font-medium text-slate-400 mb-1">
+                <div className="text-[11px] font-medium text-slate-500 mb-1">
                   ① Strategy decided —{' '}
                   {d.classification_method === 'llm'
                     ? 'note was ambiguous, Gemini classified the cause (still picks from the same 4 labels)'
@@ -326,36 +329,36 @@ export default function LiveDemo({ onResolved }) {
                 <div
                   className={`border rounded-lg p-3 text-sm transition-all ${
                     d.classification_method === 'llm'
-                      ? 'border-violet-200 bg-violet-50/40'
-                      : 'border-slate-200'
+                      ? 'border-violet-400/30 bg-violet-400/[0.06]'
+                      : 'border-white/10 bg-white/[0.03]'
                   } ${i === live.decisions.length - 1 ? 'animate-card-arrive' : ''}`}
                 >
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-slate-800">Attempt {d.attempt_number}</span>
-                    <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
+                    <span className="font-medium text-slate-100">Attempt {d.attempt_number}</span>
+                    <span className="text-xs bg-white/10 text-slate-300 rounded-full px-2 py-0.5">
                       {CAUSE_LABELS[d.root_cause] || d.root_cause}
                     </span>
-                    <span className="text-xs bg-brand-50 text-brand-700 rounded-full px-2 py-0.5">
+                    <span className="text-xs bg-brand-400/15 text-brand-300 rounded-full px-2 py-0.5">
                       {STRATEGY_LABELS[d.strategy_chosen] || d.strategy_chosen}
                     </span>
                     <span
                       className={`text-[10px] font-semibold ml-auto uppercase tracking-wide rounded-full px-2 py-0.5 ${
                         d.classification_method === 'llm'
-                          ? 'bg-violet-100 text-violet-700'
-                          : 'bg-teal-100 text-teal-700'
+                          ? 'bg-violet-400/15 text-violet-300'
+                          : 'bg-teal-400/15 text-teal-300'
                       }`}
                     >
                       {d.classification_method === 'llm' ? 'LLM classified' : 'Rule Table ✓'}
                     </span>
                   </div>
-                  <p className="text-slate-500 text-xs">{d.reasoning_string}</p>
+                  <p className="text-slate-400 text-xs">{d.reasoning_string}</p>
                   {d.suggested_retry_delay_hours != null && (
-                    <div className="mt-2 pt-2 border-t border-slate-100 flex items-start gap-1.5">
-                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 shrink-0">
+                    <div className="mt-2 pt-2 border-t border-white/10 flex items-start gap-1.5">
+                      <span className="text-[10px] font-semibold text-amber-300 bg-amber-400/10 ring-1 ring-amber-400/30 rounded-full px-2 py-0.5 shrink-0">
                         ADAPTIVE
                       </span>
-                      <p className="text-slate-500 text-[11px]">
-                        Suggested next-retry delay: <span className="font-semibold text-slate-700">{d.suggested_retry_delay_hours}h</span>
+                      <p className="text-slate-400 text-[11px]">
+                        Suggested next-retry delay: <span className="font-semibold text-slate-200">{d.suggested_retry_delay_hours}h</span>
                         {' — '}{d.retry_delay_reasoning}
                       </p>
                     </div>
@@ -366,33 +369,33 @@ export default function LiveDemo({ onResolved }) {
 
             {live.messages.map((m, i) => (
               <div key={m.id}>
-                <div className="text-[11px] font-medium text-slate-400 mb-1">
+                <div className="text-[11px] font-medium text-slate-500 mb-1">
                   ② Message written by Gemini — Hinglish copy naming the actual failure reason, real Razorpay link attached
                 </div>
                 <div
-                  className={`bg-teal-50 border border-teal-100 rounded-xl rounded-tl-none p-3 text-sm max-w-md transition-all ${
+                  className={`bg-teal-400/10 border border-teal-400/25 rounded-xl rounded-tl-none p-3 text-sm max-w-md transition-all ${
                     i === live.messages.length - 1 ? 'animate-card-arrive' : ''
                   }`}
                 >
-                  <p className="text-slate-800">{m.message_text}</p>
-                  <p className="text-[10px] text-slate-400 mt-1 truncate">{m.payment_link}</p>
+                  <p className="text-slate-100">{m.message_text}</p>
+                  <p className="text-[10px] text-slate-500 mt-1 truncate">{m.payment_link}</p>
                 </div>
               </div>
             ))}
 
             {isAwaitingResponse && (
               <div>
-                <div className="text-[11px] font-medium text-slate-400 mb-1">
+                <div className="text-[11px] font-medium text-slate-500 mb-1">
                   ③ Your move — simulate how the customer responds to the message above
                 </div>
-                <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
+                <div className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">
                   Simulate what the customer does next
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => respond('paid')}
                     disabled={loading}
-                    className="text-sm font-medium bg-teal-600 text-white rounded-full px-4 py-1.5 hover:bg-teal-700 disabled:opacity-70 inline-flex items-center gap-1.5"
+                    className="text-sm font-semibold bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-full px-4 py-1.5 hover:from-teal-400 hover:to-teal-500 disabled:opacity-70 inline-flex items-center gap-1.5 shadow-md shadow-teal-600/30"
                   >
                     {pendingResponse === 'paid' && <Spinner />}
                     Customer paid
@@ -400,7 +403,7 @@ export default function LiveDemo({ onResolved }) {
                   <button
                     onClick={() => respond('promise_to_pay')}
                     disabled={loading}
-                    className="text-sm font-medium bg-amber-500 text-white rounded-full px-4 py-1.5 hover:bg-amber-600 disabled:opacity-70 inline-flex items-center gap-1.5"
+                    className="text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-full px-4 py-1.5 hover:from-amber-400 hover:to-amber-500 disabled:opacity-70 inline-flex items-center gap-1.5 shadow-md shadow-amber-600/30"
                   >
                     {pendingResponse === 'promise_to_pay' && <Spinner />}
                     Promise to pay
@@ -408,7 +411,7 @@ export default function LiveDemo({ onResolved }) {
                   <button
                     onClick={() => respond('ignored')}
                     disabled={loading}
-                    className="text-sm font-medium bg-rose-500 text-white rounded-full px-4 py-1.5 hover:bg-rose-600 disabled:opacity-70 inline-flex items-center gap-1.5"
+                    className="text-sm font-semibold bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-full px-4 py-1.5 hover:from-rose-400 hover:to-rose-500 disabled:opacity-70 inline-flex items-center gap-1.5 shadow-md shadow-rose-600/30"
                   >
                     {pendingResponse === 'ignored' && <Spinner />}
                     Customer ignored
@@ -418,24 +421,24 @@ export default function LiveDemo({ onResolved }) {
             )}
 
             {isDone && (
-              <div className="text-sm text-slate-500">
-                Final status: <span className="font-semibold text-slate-800">{txn.status}</span>
+              <div className="text-sm text-slate-400">
+                Final status: <span className="font-semibold text-slate-100">{txn.status}</span>
                 {txn.status === 'needs_human' && ' — 3 attempts exhausted, escalated for real, just now.'}
               </div>
             )}
 
             <details className="text-xs">
-              <summary className="cursor-pointer text-slate-400 font-medium">
+              <summary className="cursor-pointer text-slate-500 font-medium hover:text-slate-300">
                 Full audit trail ({live.audit_log.length} rows)
               </summary>
-              <div className="mt-2 border border-slate-200 rounded-lg divide-y divide-slate-100">
+              <div className="mt-2 border border-white/10 rounded-lg divide-y divide-white/10 bg-black/20">
                 {live.audit_log.map((a) => (
                   <div key={a.id} className="px-3 py-2 flex items-start gap-2">
-                    <span className="text-slate-400 font-mono shrink-0 w-32">{a.timestamp}</span>
-                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-medium ${ACTOR_STYLES[a.actor] || 'bg-slate-100'}`}>
+                    <span className="text-slate-500 font-mono shrink-0 w-32">{a.timestamp}</span>
+                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-medium ${ACTOR_STYLES[a.actor] || 'bg-white/10'}`}>
                       {a.actor}
                     </span>
-                    <span className="shrink-0 font-medium text-slate-600 w-40">{a.action}</span>
+                    <span className="shrink-0 font-medium text-slate-300 w-40">{a.action}</span>
                     <span className="text-slate-500">{a.reasoning_string}</span>
                   </div>
                 ))}
@@ -444,7 +447,7 @@ export default function LiveDemo({ onResolved }) {
 
             <button
               onClick={() => { setLive(null); setError(null); setFormError(null); setCustomForm(CUSTOM_DEFAULTS) }}
-              className="text-xs text-slate-400 underline"
+              className="text-xs text-slate-500 hover:text-slate-300 underline"
             >
               Reset — trigger another live demo
             </button>

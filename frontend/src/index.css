@@ -1,13 +1,40 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
+/* Manrope is loaded via a <link> in index.html (more reliable than a CSS
+   @import, which some browsers deprioritize/drop behind other stylesheet
+   loads) — this file just references the family name below. */
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 body {
   margin: 0;
   font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  background: #020617;
+}
+
+/* Reusable "glass card" surface for the dark theme — a translucent dark
+   panel with a hairline border and soft depth, used in place of the old
+   flat bg-white cards. Applied via className="panel" alongside whatever
+   rounded-*/padding utilities a component already uses. */
+.panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+/* Ambient page backdrop: faint fixed radial glows (brand blue + teal) plus
+   a very fine dot grid, both fixed so they don't scroll with content —
+   gives the dark background depth/texture instead of a flat black fill. */
+.app-backdrop {
+  background-color: #020617;
+  background-image:
+    radial-gradient(circle at 12% 8%, rgba(48, 94, 255, 0.16), transparent 32%),
+    radial-gradient(circle at 88% 18%, rgba(23, 185, 142, 0.12), transparent 30%),
+    radial-gradient(circle at 50% 95%, rgba(48, 94, 255, 0.08), transparent 40%),
+    radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: auto, auto, auto, 26px 26px;
+  background-attachment: fixed, fixed, fixed, fixed;
 }
 
 /* Brand tokens — a tuned blue/teal pair replacing generic Tailwind

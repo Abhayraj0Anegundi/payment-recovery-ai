@@ -74,38 +74,49 @@ function App() {
     needsHumanTxns.find((t) => t.latest_cause === 'insufficient_funds') || needsHumanTxns[0]
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-brand-50/60 via-white to-white">
-      <header className="bg-white/90 backdrop-blur border-b border-slate-200 px-6 py-4 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-brand-600 to-teal-500 flex items-center justify-center shrink-0 shadow-sm shadow-brand-600/30">
-              <span className="text-white font-display font-extrabold text-sm">₹</span>
+    <div className="min-h-screen app-backdrop text-slate-200">
+      <header className="relative bg-gradient-to-br from-slate-950 via-brand-900 to-slate-950 px-6 py-6 sticky top-0 z-10 overflow-hidden shadow-lg shadow-black/40 border-b border-white/5">
+        <div
+          className="absolute inset-0 opacity-40"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 15% 30%, rgba(48,94,255,0.35), transparent 45%), radial-gradient(circle at 85% 70%, rgba(23,185,142,0.3), transparent 45%)',
+          }}
+        />
+        <div className="relative max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3.5">
+            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-brand-400 to-teal-400 flex items-center justify-center shrink-0 shadow-lg shadow-brand-500/40 ring-1 ring-white/20">
+              <span className="text-white font-display font-extrabold text-lg">₹</span>
             </div>
             <div>
-              <h1 className="text-xl font-display font-extrabold text-slate-900 tracking-tight">
-                AI Revenue Recovery
+              <h1 className="text-2xl sm:text-3xl font-display font-extrabold tracking-tight leading-none">
+                <span className="text-white">AI Revenue</span>{' '}
+                <span className="bg-gradient-to-r from-brand-300 to-teal-300 bg-clip-text text-transparent">
+                  Recovery
+                </span>
               </h1>
-              <p className="text-sm text-slate-500">
-                Hinglish-voice payment recovery — <span className="text-brand-700 font-medium">rule-based strategy</span>,{' '}
-                <span className="text-teal-700 font-medium">LLM copy</span>, live SQLite audit trail
+              <p className="text-sm text-slate-300 mt-1.5">
+                Hinglish-voice payment recovery —{' '}
+                <span className="text-brand-300 font-semibold">rule-based strategy</span>,{' '}
+                <span className="text-teal-300 font-semibold">LLM copy</span>, live SQLite audit trail
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             {lastSimCount !== null && !simulating && (
-              <span className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-3 py-1 animate-card-arrive">
+              <span className="text-xs font-semibold text-teal-200 bg-teal-500/15 border border-teal-400/30 rounded-full px-3 py-1 animate-card-arrive">
                 +{lastSimCount} new transaction{lastSimCount === 1 ? '' : 's'} processed
               </span>
             )}
             {lastLoaded && (
-              <span className="text-xs text-slate-500 font-medium">
+              <span className="text-xs text-slate-300 font-medium hidden sm:inline">
                 Live from SQLite · {lastLoaded.toLocaleTimeString()}
               </span>
             )}
             <button
               onClick={refreshWithSimulatedActivity}
               disabled={simulating}
-              className="text-sm font-semibold bg-slate-900 text-white rounded-full px-5 py-2 hover:bg-slate-700 disabled:opacity-70 inline-flex items-center gap-2 transition-colors shadow-sm"
+              className="text-sm font-bold bg-gradient-to-r from-brand-500 to-brand-600 text-white rounded-full px-5 py-2.5 hover:from-brand-400 hover:to-brand-500 disabled:opacity-70 inline-flex items-center gap-2 transition-all shadow-lg shadow-brand-600/40 hover:shadow-brand-500/50 hover:-translate-y-0.5"
             >
               {simulating && (
                 <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
@@ -119,10 +130,10 @@ function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
         {loading && <div className="text-slate-400 text-sm">Loading live data…</div>}
         {error && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg px-4 py-3">
+          <div className="bg-rose-950/40 border border-rose-500/30 text-rose-300 text-sm rounded-2xl px-4 py-3">
             Failed to load from API: {error}. Is the backend running (py -3 api.py)?
           </div>
         )}
@@ -142,14 +153,14 @@ function App() {
             <MessageShowcase messages={showcase} />
 
             {pinnedNeedsHuman && (
-              <div className="bg-white border border-rose-200 rounded-2xl px-5 py-3.5 flex items-center justify-between shadow-sm shadow-rose-100">
+              <div className="panel border-rose-500/30 rounded-2xl px-5 py-3.5 flex items-center justify-between shadow-lg shadow-rose-950/30">
                 <div className="flex items-center gap-3">
-                  <span className="h-2 w-2 rounded-full bg-rose-500 shrink-0" />
+                  <span className="h-2 w-2 rounded-full bg-rose-400 shrink-0 shadow-[0_0_8px_2px_rgba(251,113,133,0.6)]" />
                   <div>
-                    <span className="text-sm font-semibold text-rose-700">
+                    <span className="text-sm font-semibold text-rose-300">
                       Needs Human — example case pinned for demo
                     </span>
-                    <span className="text-sm text-slate-500 ml-2">
+                    <span className="text-sm text-slate-400 ml-2">
                       #{pinnedNeedsHuman.id} {pinnedNeedsHuman.customer_name} — {pinnedNeedsHuman.razorpay_failure_code},
                       3 attempts exhausted
                     </span>
@@ -157,7 +168,7 @@ function App() {
                 </div>
                 <button
                   onClick={() => setSelectedId(pinnedNeedsHuman.id)}
-                  className="text-sm font-semibold text-rose-700 hover:text-rose-800 shrink-0 rounded-full border border-rose-200 px-3 py-1.5 hover:bg-rose-50 transition-colors"
+                  className="text-sm font-semibold text-rose-300 hover:text-rose-200 shrink-0 rounded-full border border-rose-500/40 px-3 py-1.5 hover:bg-rose-500/10 transition-colors"
                 >
                   View audit trail →
                 </button>
@@ -165,7 +176,7 @@ function App() {
             )}
 
             <section>
-              <h2 className="text-sm font-display font-bold text-slate-800 mb-3 tracking-tight">Kanban Board</h2>
+              <h2 className="text-sm font-display font-bold text-slate-300 mb-3 tracking-tight uppercase">Kanban Board</h2>
               <KanbanBoard
                 transactions={transactions}
                 onSelect={setSelectedId}
