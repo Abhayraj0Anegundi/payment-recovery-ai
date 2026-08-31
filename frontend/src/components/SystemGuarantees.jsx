@@ -1,12 +1,12 @@
 function Metric({ value, label, tone = 'default' }) {
   const toneClasses = {
     default: 'text-white',
-    good: 'text-emerald-400',
+    good: 'text-teal-400',
   }
   return (
     <div className="text-center px-3">
-      <div className={`text-2xl font-bold ${toneClasses[tone]}`}>{value}</div>
-      <div className="text-xs text-slate-400 mt-0.5">{label}</div>
+      <div className={`font-display text-2xl font-extrabold tracking-tight ${toneClasses[tone]}`}>{value}</div>
+      <div className="text-xs text-slate-400 mt-0.5 min-h-[2.25rem] flex items-start justify-center">{label}</div>
     </div>
   )
 }
@@ -15,9 +15,12 @@ export default function SystemGuarantees({ guarantees }) {
   if (!guarantees) return null
 
   return (
-    <div className="bg-slate-900 text-white rounded-xl px-5 py-4">
-      <div className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">
-        System Guarantees — verifiable from audit_log, not asserted
+    <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl px-5 py-4 ring-1 ring-white/5">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="h-1.5 w-1.5 rounded-full bg-teal-400" />
+        <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+          System Guarantees — verifiable from audit_log, not asserted
+        </div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 divide-x divide-slate-700">
         <Metric

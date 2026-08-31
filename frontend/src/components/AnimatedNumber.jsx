@@ -8,7 +8,10 @@ import { useEffect, useRef, useState } from 'react'
  * suffix/prefix let the caller keep formatting (%, decimals) without the
  * hook needing to know about it.
  */
-export default function AnimatedNumber({ value, decimals = 0, suffix = '', prefix = '', durationMs = 700 }) {
+export default function AnimatedNumber({
+  value, decimals = 0, suffix = '', prefix = '', durationMs = 700,
+  flashClassName = 'text-brand-600 scale-110',
+}) {
   const numericTarget = typeof value === 'number' ? value : parseFloat(value)
   const isNumeric = !Number.isNaN(numericTarget)
 
@@ -57,7 +60,7 @@ export default function AnimatedNumber({ value, decimals = 0, suffix = '', prefi
   return (
     <span
       className={`inline-block transition-all duration-300 ${
-        flash ? 'text-indigo-600 scale-110' : 'scale-100'
+        flash ? flashClassName : 'scale-100'
       }`}
     >
       {prefix}{display.toFixed(decimals)}{suffix}

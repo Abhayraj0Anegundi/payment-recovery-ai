@@ -85,7 +85,7 @@ export default function TransactionDetailModal({ transactionId, onClose }) {
                           <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
                             {CAUSE_LABELS[d.root_cause] || d.root_cause}
                           </span>
-                          <span className="text-xs bg-indigo-50 text-indigo-700 rounded-full px-2 py-0.5">
+                          <span className="text-xs bg-brand-50 text-brand-700 rounded-full px-2 py-0.5">
                             {STRATEGY_LABELS[d.strategy_chosen] || d.strategy_chosen}
                           </span>
                           <span className="text-[10px] text-slate-400 ml-auto uppercase tracking-wide">
@@ -115,7 +115,7 @@ export default function TransactionDetailModal({ transactionId, onClose }) {
                   <h3 className="text-sm font-semibold text-slate-700 mb-2">WhatsApp Messages (mock)</h3>
                   <div className="space-y-2">
                     {detail.messages.map((m) => (
-                      <div key={m.id} className="bg-emerald-50 border border-emerald-100 rounded-lg rounded-tl-none p-3 text-sm max-w-md">
+                      <div key={m.id} className="bg-teal-50 border border-teal-100 rounded-xl rounded-tl-none p-3 text-sm max-w-md">
                         <p className="text-slate-800">{m.message_text}</p>
                         <p className="text-[10px] text-slate-400 mt-1 truncate">{m.payment_link}</p>
                       </div>

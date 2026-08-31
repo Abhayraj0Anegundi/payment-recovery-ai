@@ -139,12 +139,15 @@ export default function LiveDemo({ onResolved }) {
   const isDone = txn && !isAwaitingResponse
 
   return (
-    <div className="bg-white border-2 border-indigo-200 rounded-xl overflow-hidden">
-      <div className="px-5 py-3 border-b border-indigo-100 bg-indigo-50/50">
-        <div className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
-          Live Demo — real webhook, real pipeline, right now
+    <div className="bg-white border border-brand-200 rounded-2xl overflow-hidden shadow-sm shadow-brand-100">
+      <div className="px-5 py-3.5 border-b border-brand-100 bg-gradient-to-r from-brand-50 to-teal-50/60">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-brand-600 animate-pulse" />
+          <div className="text-xs font-semibold text-brand-700 uppercase tracking-wide">
+            Live Demo — real webhook, real pipeline, right now
+          </div>
         </div>
-        <p className="text-xs text-indigo-500 mt-1">
+        <p className="text-xs text-brand-500 mt-1">
           This doesn't read from the pre-run batch. It POSTs a fresh payment.failed event to
           the real /api/webhook endpoint, which runs classify → decide → Razorpay link → Gemini
           message through the exact same pipeline.py functions the batch uses.
@@ -186,8 +189,8 @@ export default function LiveDemo({ onResolved }) {
                         onClick={() => setPresetIdx(i)}
                         className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
                           i === presetIdx
-                            ? 'bg-indigo-600 text-white border-indigo-600'
-                            : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-brand-300'
                         }`}
                       >
                         {CAUSE_LABELS[p.failure_code] || p.failure_code}
@@ -198,7 +201,7 @@ export default function LiveDemo({ onResolved }) {
                 <button
                   onClick={triggerPreset}
                   disabled={loading}
-                  className="text-sm font-medium bg-indigo-600 text-white rounded-lg px-4 py-2 hover:bg-indigo-700 disabled:opacity-70 inline-flex items-center gap-2"
+                  className="text-sm font-medium bg-brand-600 text-white rounded-full px-4 py-2 hover:bg-brand-700 disabled:opacity-70 inline-flex items-center gap-2"
                 >
                   {loading && <Spinner />}
                   {loading ? 'Sending webhook…' : 'Trigger a real failed payment'}
@@ -220,7 +223,7 @@ export default function LiveDemo({ onResolved }) {
                       value={customForm.name}
                       onChange={(e) => setCustomForm({ ...customForm, name: e.target.value })}
                       placeholder="e.g. Aditya Verma"
-                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
                     />
                   </div>
                   <div>
@@ -231,7 +234,7 @@ export default function LiveDemo({ onResolved }) {
                       value={customForm.amount}
                       onChange={(e) => setCustomForm({ ...customForm, amount: e.target.value })}
                       placeholder="e.g. 2499"
-                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
                     />
                   </div>
                   <div>
@@ -239,7 +242,7 @@ export default function LiveDemo({ onResolved }) {
                     <select
                       value={customForm.failure_code}
                       onChange={(e) => setCustomForm({ ...customForm, failure_code: e.target.value })}
-                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
                     >
                       {CUSTOM_FAILURE_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>{o.label}</option>
@@ -251,7 +254,7 @@ export default function LiveDemo({ onResolved }) {
                     <select
                       value={customForm.method}
                       onChange={(e) => setCustomForm({ ...customForm, method: e.target.value })}
-                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
                     >
                       {METHOD_OPTIONS.map((m) => (
                         <option key={m} value={m}>{m}</option>
@@ -269,7 +272,7 @@ export default function LiveDemo({ onResolved }) {
                       value={customForm.note}
                       onChange={(e) => setCustomForm({ ...customForm, note: e.target.value })}
                       placeholder="e.g. Bank did not respond before session expired"
-                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
                     />
                   </div>
                 )}
@@ -277,7 +280,7 @@ export default function LiveDemo({ onResolved }) {
                 <button
                   onClick={triggerCustom}
                   disabled={loading}
-                  className="text-sm font-medium bg-indigo-600 text-white rounded-lg px-4 py-2 hover:bg-indigo-700 disabled:opacity-70 inline-flex items-center gap-2"
+                  className="text-sm font-medium bg-brand-600 text-white rounded-full px-4 py-2 hover:bg-brand-700 disabled:opacity-70 inline-flex items-center gap-2"
                 >
                   {loading && <Spinner />}
                   {loading ? 'Sending webhook…' : 'Trigger this transaction'}
@@ -332,14 +335,14 @@ export default function LiveDemo({ onResolved }) {
                     <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
                       {CAUSE_LABELS[d.root_cause] || d.root_cause}
                     </span>
-                    <span className="text-xs bg-indigo-50 text-indigo-700 rounded-full px-2 py-0.5">
+                    <span className="text-xs bg-brand-50 text-brand-700 rounded-full px-2 py-0.5">
                       {STRATEGY_LABELS[d.strategy_chosen] || d.strategy_chosen}
                     </span>
                     <span
                       className={`text-[10px] font-semibold ml-auto uppercase tracking-wide rounded-full px-2 py-0.5 ${
                         d.classification_method === 'llm'
                           ? 'bg-violet-100 text-violet-700'
-                          : 'bg-emerald-100 text-emerald-700'
+                          : 'bg-teal-100 text-teal-700'
                       }`}
                     >
                       {d.classification_method === 'llm' ? 'LLM classified' : 'Rule Table ✓'}
@@ -367,7 +370,7 @@ export default function LiveDemo({ onResolved }) {
                   ② Message written by Gemini — Hinglish copy naming the actual failure reason, real Razorpay link attached
                 </div>
                 <div
-                  className={`bg-emerald-50 border border-emerald-100 rounded-lg rounded-tl-none p-3 text-sm max-w-md transition-all ${
+                  className={`bg-teal-50 border border-teal-100 rounded-xl rounded-tl-none p-3 text-sm max-w-md transition-all ${
                     i === live.messages.length - 1 ? 'animate-card-arrive' : ''
                   }`}
                 >
@@ -389,7 +392,7 @@ export default function LiveDemo({ onResolved }) {
                   <button
                     onClick={() => respond('paid')}
                     disabled={loading}
-                    className="text-sm font-medium bg-emerald-600 text-white rounded-lg px-3 py-1.5 hover:bg-emerald-700 disabled:opacity-70 inline-flex items-center gap-1.5"
+                    className="text-sm font-medium bg-teal-600 text-white rounded-full px-4 py-1.5 hover:bg-teal-700 disabled:opacity-70 inline-flex items-center gap-1.5"
                   >
                     {pendingResponse === 'paid' && <Spinner />}
                     Customer paid
@@ -397,7 +400,7 @@ export default function LiveDemo({ onResolved }) {
                   <button
                     onClick={() => respond('promise_to_pay')}
                     disabled={loading}
-                    className="text-sm font-medium bg-amber-500 text-white rounded-lg px-3 py-1.5 hover:bg-amber-600 disabled:opacity-70 inline-flex items-center gap-1.5"
+                    className="text-sm font-medium bg-amber-500 text-white rounded-full px-4 py-1.5 hover:bg-amber-600 disabled:opacity-70 inline-flex items-center gap-1.5"
                   >
                     {pendingResponse === 'promise_to_pay' && <Spinner />}
                     Promise to pay
@@ -405,7 +408,7 @@ export default function LiveDemo({ onResolved }) {
                   <button
                     onClick={() => respond('ignored')}
                     disabled={loading}
-                    className="text-sm font-medium bg-rose-500 text-white rounded-lg px-3 py-1.5 hover:bg-rose-600 disabled:opacity-70 inline-flex items-center gap-1.5"
+                    className="text-sm font-medium bg-rose-500 text-white rounded-full px-4 py-1.5 hover:bg-rose-600 disabled:opacity-70 inline-flex items-center gap-1.5"
                   >
                     {pendingResponse === 'ignored' && <Spinner />}
                     Customer ignored

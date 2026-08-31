@@ -5,10 +5,10 @@ function TransactionCard({ txn, onClick, highlight, justChanged }) {
   return (
     <button
       onClick={() => onClick(txn.id)}
-      className={`w-full text-left border rounded-lg p-3 hover:shadow-md cursor-pointer
+      className={`w-full text-left border rounded-xl p-3 hover:shadow-md cursor-pointer
         transition-all duration-700 ease-out
         ${highlight ? 'border-rose-300 ring-2 ring-rose-200 bg-white' : 'border-slate-200'}
-        ${justChanged ? 'animate-card-arrive ring-2 ring-indigo-300' : !highlight ? 'bg-white' : ''}
+        ${justChanged ? 'animate-card-arrive ring-2 ring-brand-300' : !highlight ? 'bg-white' : ''}
       `}
     >
       <div className="flex items-center justify-between mb-1.5">
@@ -76,13 +76,13 @@ export default function KanbanBoard({ transactions, onSelect, pinnedNeedsHumanId
         const items = byStatus[col.key] || []
         return (
           <div key={col.key} className="min-w-0">
-            <div className={`bg-white border border-slate-200 border-t-4 ${col.accent} rounded-xl p-3 h-full`}>
+            <div className={`bg-white border border-slate-200 border-t-4 ${col.accent} rounded-2xl p-3 h-full`}>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-slate-700">{col.label}</h3>
+                <h3 className="text-sm font-display font-bold text-slate-700">{col.label}</h3>
                 <span
-                  className={`text-xs font-medium rounded-full px-2 py-0.5 transition-colors duration-300 ${
+                  className={`text-xs font-semibold rounded-full px-2 py-0.5 transition-colors duration-300 ${
                     items.some((t) => justChangedIds.has(t.id))
-                      ? 'bg-indigo-100 text-indigo-700'
+                      ? 'bg-brand-100 text-brand-700'
                       : 'bg-slate-100 text-slate-600'
                   }`}
                 >

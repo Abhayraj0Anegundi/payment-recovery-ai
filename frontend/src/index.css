@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');
 
 :root {
   color-scheme: light;
@@ -6,17 +7,52 @@
 
 body {
   margin: 0;
+  font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Brand tokens — a tuned blue/teal pair replacing generic Tailwind
+   indigo/emerald across the dashboard, plus a display font for
+   headings/headline numbers. Registered via @theme so brand-* utility
+   classes (bg-brand-600, text-brand-600, etc.) work everywhere. */
+@theme {
+  --font-display: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #7c93ff;
+  --color-brand-500: #4d72ff;
+  --color-brand-600: #305eff;
+  --color-brand-700: #2347db;
+  --color-brand-800: #1d3aae;
+  --color-brand-900: #1c3489;
+
+  --color-teal-50: #ecfdf7;
+  --color-teal-100: #d1faec;
+  --color-teal-200: #a4f4da;
+  --color-teal-300: #6ce8c3;
+  --color-teal-400: #35d3a8;
+  --color-teal-500: #17b98e;
+  --color-teal-600: #0d9a76;
+  --color-teal-700: #0c7c61;
+  --color-teal-800: #0e624f;
+  --color-teal-900: #0d5142;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
 }
 
 @keyframes card-arrive {
   0% {
     transform: scale(0.96) translateY(-8px);
     opacity: 0;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.45);
+    box-shadow: 0 0 0 2px rgba(48, 94, 255, 0.4);
   }
   60% {
     opacity: 1;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.45);
+    box-shadow: 0 0 0 2px rgba(48, 94, 255, 0.4);
   }
   100% {
     transform: scale(1) translateY(0);
@@ -30,7 +66,7 @@ body {
 
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+    box-shadow: 0 0 0 0 rgba(48, 94, 255, 0.35);
   }
   50% {
     box-shadow: 0 0 0 6px rgba(99, 102, 241, 0);
