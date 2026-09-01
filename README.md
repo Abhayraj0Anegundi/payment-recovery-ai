@@ -326,7 +326,7 @@ config to get wrong.
    `backend/.env` locally. `GEMINI_MODEL` is already set in `render.yaml`.
 3. Deploy. The build step runs `npm run build` (frontend) then installs backend
    dependencies; the start command is
-   `gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 60 api:app`.
+   `gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 api:app`.
 4. `recovery.db` ships committed in the repo, so the deployed instance starts with the
    exact same documented 92-transaction state — no separate seeding step needed.
 
@@ -338,6 +338,24 @@ Payment Link creation, and both of those draw down a shared, finite quota (see "
 Razorpay quota story" below). `/api/webhook/razorpay` is deliberately NOT rate-limited
 the same way — it's already protected by HMAC signature verification, so an attacker
 without the webhook secret can't get past it regardless of request volume.
+
+**Why `--workers 1 --threads 4`, not the more typical multi-worker setup**: found by
+actually stress-testing this deployment, not in theory — `--workers 2` silently made the
+rate limiter above ~2x less effective and non-deterministic, because each gunicorn worker
+is a separate OS process with its own private copy of the in-memory counter, so requests
+split across two uncoordinated limiters. One worker with threads keeps the limiter's
+state (and SQLite access) inside a single process, while threads still give real
+concurrency for the I/O-bound Gemini/Razorpay calls.
+
+**A known rough edge on the free tier**: under rapid repeated testing, a small fraction of
+requests to the write endpoints returned `500` with no application-level error logged —
+gunicorn's own worker timeout killing a request before a slow Gemini API call finished,
+most noticeable right after the free instance wakes from being idle (shared, limited CPU).
+The timeout is set to 120s specifically to reduce this, but it doesn't eliminate the
+underlying cause: Render's free tier is genuinely slower and less consistent than a paid
+tier or this project's author's own laptop. A single, unhurried click on the live Live
+Demo panel is not where this showed up in testing — it appeared under back-to-back
+automated requests fired faster than a person would click.
 
 **A consequence worth stating plainly**: once deployed, the transaction count is no
 longer only something *you* change — anyone with the URL who submits the Live Demo form

@@ -17,7 +17,15 @@ services:
     # succeeded when the 11th+ should have been rate-limited). --threads
     # gives real concurrency for the I/O-bound Gemini/Razorpay calls without
     # that problem, since threads share the same process memory.
-    startCommand: cd backend && gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60 api:app
+    # --timeout 120, not gunicorn's default/a tighter value: on Render's free
+    # tier (shared, limited CPU), a single Gemini API call can occasionally
+    # take long enough — especially right after a cold boot — that a 60s
+    # worker timeout kills the request before Gemini responds, surfacing as
+    # a 500 with no Python traceback in the app logs (gunicorn's own SIGKILL,
+    # not an application exception). Seen directly while stress-testing this
+    # deployment. 120s doesn't fix a slow Gemini call, it just stops
+    # gunicorn from being the thing that kills it first.
+    startCommand: cd backend && gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 api:app
     envVars:
       - key: GEMINI_API_KEY
         sync: false
