@@ -1,10 +1,10 @@
-function Metric({ value, label, tone = 'default' }) {
+function Metric({ value, label, tone = 'default', storyKey }) {
   const toneClasses = {
     default: 'text-white',
     good: 'text-teal-300',
   }
   return (
-    <div className="text-center px-3">
+    <div className="text-center px-3" data-story={storyKey}>
       <div
         className={`font-display text-3xl font-extrabold tracking-tight ${toneClasses[tone]}`}
         style={tone === 'good' ? { textShadow: '0 0 20px rgba(53,211,168,0.5)' } : undefined}
@@ -47,6 +47,7 @@ export default function SystemGuarantees({ guarantees }) {
             value={guarantees.root_cause_classification.via_rule_table}
             label={`of ${guarantees.total_decisions} classified by rule table alone`}
             tone="good"
+            storyKey="rule-table-proof"
           />
           <Metric
             value={guarantees.attempt_cap.max_attempt_number_ever_recorded}
@@ -61,6 +62,7 @@ export default function SystemGuarantees({ guarantees }) {
               value={guarantees.confidence_safety.low_confidence_auto_escalations}
               label={`of ${guarantees.confidence_safety.low_confidence_classifications} low-confidence classifications auto-escalated`}
               tone="good"
+              storyKey="confidence-safety"
             />
           )}
           <Metric

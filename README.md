@@ -544,6 +544,56 @@ panel and the transaction detail modal.
 
 ---
 
+## Regulatory reality check — DND, consent, and RBI, told plainly
+
+This system sends automated payment reminders over WhatsApp to a phone number tied to a
+failed transaction. In production, in India, that's not just a UX question — it's a
+compliance one, and it's worth being explicit about what this hackathon build does and
+doesn't handle, rather than pretending the gap isn't there.
+
+**What actually applies:**
+- **TRAI's DND/UCC framework** governs commercial communication to Indian phone numbers.
+  A payment-failure recovery nudge is transactional (triggered by the customer's own
+  in-progress payment, not marketing), which is the category TRAI treats differently from
+  promotional messages — but "transactional" isn't a blank check, and the number of
+  nudges, their timing, and their content still need to stay inside that category, not
+  drift into upsell or marketing copy.
+- **WhatsApp Business Platform policy** requires the business to have an existing
+  relationship or opt-in with the customer before messaging them, and imposes its own
+  template-approval process for anything sent outside a customer-initiated 24-hour
+  window — a real deployment would be sending pre-approved WhatsApp message templates,
+  not free-form LLM text, for exactly this reason.
+- **RBI's guidelines on payment recovery communication** (in spirit, if not a single named
+  circular) expect any automated recovery contact to be proportionate, to stop once the
+  customer has clearly declined or reported a dispute, and to never pressure or mislead —
+  which is precisely why this system's 3-attempt hard cap exists as *code*, not policy: it
+  can't be argued around or prompt-engineered past, because `pipeline.py` raises a
+  `ValueError` past attempt 3 rather than asking an LLM to please stop.
+
+**What this build does and doesn't do about it:**
+- ✅ Hard-capped attempts (3, structurally enforced) and a full audit trail of every
+  message sent — both are exactly what a compliance review would ask for first.
+- ✅ Fixed, auditable decision logic — a regulator or auditor can read `classifier.py`
+  and know in advance what the system will do, with no LLM judgment call in that path.
+- ❌ **No opt-out / STOP handling.** There is no `consent` or `opted_out` column, no
+  "reply STOP to unsubscribe" flow, and no check against one before sending a nudge. Every
+  seeded transaction in this demo is treated as contactable.
+- ❌ **No WhatsApp template pre-approval.** The Hinglish messages are free-form LLM
+  output, which is correct for demonstrating message quality but is not how a real
+  WhatsApp Business integration would be allowed to send transactional messages at scale.
+- ❌ **No message-frequency governor beyond the attempt cap** — 3 total contacts is a
+  reasonable ceiling on its own, but a production system would also need cooldown windows
+  between attempts, which `adaptive.py`'s retry-delay suggestion is a step toward but
+  doesn't yet enforce as a hard constraint.
+
+Closing these wasn't in scope for a hackathon build, and no other project in this track is
+likely to have solved DND/consent/template-approval end-to-end either — but knowing
+exactly which three columns and one middleware check stand between this and a compliant
+production rollout is a more credible answer than either ignoring the question or
+overclaiming a compliance feature that isn't actually implemented.
+
+---
+
 ## Data model
 
 See [`backend/schema.sql`](backend/schema.sql) for the full DDL. Five tables:

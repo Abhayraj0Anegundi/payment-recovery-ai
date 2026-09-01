@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { simulateFreshActivity } from './simulateActivity'
+import LandingPage from './components/LandingPage'
+import StoryMode, { STORY_STEPS } from './components/StoryMode'
 import MetricsHeader from './components/MetricsHeader'
 import RevenueImpact from './components/RevenueImpact'
 import CauseBreakdownTable from './components/CauseBreakdownTable'
@@ -12,6 +14,7 @@ import KanbanBoard from './components/KanbanBoard'
 import TransactionDetailModal from './components/TransactionDetailModal'
 
 function App() {
+  const [view, setView] = useState('landing') // 'landing' | 'dashboard'
   const [transactions, setTransactions] = useState([])
   const [summary, setSummary] = useState(null)
   const [byCause, setByCause] = useState(null)
@@ -25,6 +28,8 @@ function App() {
   const [lastSimCount, setLastSimCount] = useState(null)
   const [error, setError] = useState(null)
   const [lastLoaded, setLastLoaded] = useState(null)
+  const [storyActive, setStoryActive] = useState(false)
+  const [storyStep, setStoryStep] = useState(0)
 
   async function loadAll() {
     try {
@@ -54,8 +59,11 @@ function App() {
   }
 
   useEffect(() => {
-    loadAll()
-  }, [])
+    // The landing page needs no backend at all — only fetch once the user
+    // actually opens the dashboard, so a backend that isn't running yet
+    // never surfaces an error banner on the marketing page.
+    if (view === 'dashboard') loadAll()
+  }, [view])
 
   async function refreshWithSimulatedActivity() {
     setSimulating(true)
@@ -69,6 +77,21 @@ function App() {
     }
   }
 
+  function startStory() {
+    setStoryStep(0)
+    setStoryActive(true)
+  }
+  function nextStoryStep() {
+    if (storyStep >= STORY_STEPS.length - 1) {
+      setStoryActive(false)
+      return
+    }
+    setStoryStep((s) => s + 1)
+  }
+  function backStoryStep() {
+    setStoryStep((s) => Math.max(0, s - 1))
+  }
+
   const needsHumanTxns = transactions.filter((t) => t.status === 'needs_human')
   // Prefer an insufficient_funds case for the pinned example — it has the
   // clearest story (lowest recovery rate; reminders genuinely don't help
@@ -76,6 +99,10 @@ function App() {
   // behavior, not a bug). Falls back to any needs_human case.
   const pinnedNeedsHuman =
     needsHumanTxns.find((t) => t.latest_cause === 'insufficient_funds') || needsHumanTxns[0]
+
+  if (view === 'landing') {
+    return <LandingPage onLaunch={() => setView('dashboard')} />
+  }
 
   return (
     <div className="min-h-screen app-backdrop text-slate-200">
@@ -88,8 +115,12 @@ function App() {
           }}
         />
         <div className="relative max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
-            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-brand-400 to-teal-400 flex items-center justify-center shrink-0 shadow-lg shadow-brand-500/40 ring-1 ring-white/20">
+          <button
+            onClick={() => setView('landing')}
+            className="flex items-center gap-3.5 text-left group"
+            title="Back to home"
+          >
+            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-brand-400 to-teal-400 flex items-center justify-center shrink-0 shadow-lg shadow-brand-500/40 ring-1 ring-white/20 group-hover:scale-105 transition-transform">
               <span className="text-white font-display font-extrabold text-lg">₹</span>
             </div>
             <div>
@@ -105,7 +136,7 @@ function App() {
                 <span className="text-teal-300 font-semibold">LLM copy</span>, live SQLite audit trail
               </p>
             </div>
-          </div>
+          </button>
           <div className="flex items-center gap-3">
             {lastSimCount !== null && !simulating && (
               <span className="text-xs font-semibold text-teal-200 bg-teal-500/15 border border-teal-400/30 rounded-full px-3 py-1 animate-card-arrive">
@@ -117,6 +148,12 @@ function App() {
                 Live from SQLite · {lastLoaded.toLocaleTimeString()}
               </span>
             )}
+            <button
+              onClick={startStory}
+              className="text-sm font-bold text-teal-300 bg-teal-400/10 ring-1 ring-teal-400/40 rounded-full px-5 py-2.5 hover:bg-teal-400/20 hover:text-teal-200 inline-flex items-center gap-2 transition-all"
+            >
+              ▶ Story mode
+            </button>
             <button
               onClick={refreshWithSimulatedActivity}
               disabled={simulating}
@@ -144,11 +181,15 @@ function App() {
 
         {!loading && !error && (
           <>
-            <LiveDemo onResolved={loadAll} />
+            <div data-story="live-demo">
+              <LiveDemo onResolved={loadAll} />
+            </div>
 
             <MetricsHeader summary={summary} />
 
-            <RevenueImpact impact={revenue} />
+            <div data-story="revenue-impact">
+              <RevenueImpact impact={revenue} />
+            </div>
 
             <SystemGuarantees guarantees={guarantees} />
 
@@ -156,10 +197,12 @@ function App() {
 
             <AdaptiveInsight insight={insight} />
 
-            <MessageShowcase messages={showcase} />
+            <div data-story="message-showcase">
+              <MessageShowcase messages={showcase} />
+            </div>
 
             {pinnedNeedsHuman && (
-              <div className="panel border-rose-500/30 rounded-2xl px-5 py-3.5 flex items-center justify-between shadow-lg shadow-rose-950/30">
+              <div data-story="needs-human-pin" className="panel border-rose-500/30 rounded-2xl px-5 py-3.5 flex items-center justify-between shadow-lg shadow-rose-950/30">
                 <div className="flex items-center gap-3">
                   <span className="h-2 w-2 rounded-full bg-rose-400 shrink-0 shadow-[0_0_8px_2px_rgba(251,113,133,0.6)]" />
                   <div>
@@ -194,6 +237,14 @@ function App() {
       </main>
 
       <TransactionDetailModal transactionId={selectedId} onClose={() => setSelectedId(null)} />
+
+      <StoryMode
+        active={storyActive}
+        stepIndex={storyStep}
+        onNext={nextStoryStep}
+        onBack={backStoryStep}
+        onExit={() => setStoryActive(false)}
+      />
     </div>
   )
 }
