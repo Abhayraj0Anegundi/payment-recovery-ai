@@ -50,6 +50,10 @@ const CUSTOM_DEFAULTS = {
   note: '',
 }
 
+function breakItDefaults() {
+  return { ...CUSTOM_DEFAULTS, name: 'Judge Test', failure_code: 'other', amount: '999' }
+}
+
 export default function LiveDemo({ onResolved }) {
   const [mode, setMode] = useState('preset') // 'preset' | 'custom'
   const [presetIdx, setPresetIdx] = useState(0)
@@ -160,6 +164,32 @@ export default function LiveDemo({ onResolved }) {
       <div className="px-5 py-4 space-y-4">
         {!live && (
           <>
+            <div className="rounded-xl border border-rose-400/25 bg-rose-500/[0.05] px-4 py-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="text-xs font-bold text-rose-300 uppercase tracking-wide mb-1">
+                    Try to break the safety net
+                  </div>
+                  <p className="text-xs text-slate-400 max-w-lg leading-relaxed">
+                    Not "will the LLM always guess right" — it won't always, and we don't claim
+                    that. The actual claim: <span className="text-slate-200 font-medium">no input
+                    can make it invent a 5th cause, or send a customer a nudge based on a guess it
+                    isn't confident in.</span> Type the vaguest, most contradictory failure note
+                    you can think of and watch what it does with it.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setMode('custom')
+                    setCustomForm(breakItDefaults())
+                  }}
+                  className="text-xs font-bold text-rose-200 bg-rose-500/15 ring-1 ring-rose-400/40 rounded-full px-4 py-2 hover:bg-rose-500/25 transition-colors shrink-0"
+                >
+                  Try it →
+                </button>
+              </div>
+            </div>
+
             <div className="flex gap-1 bg-white/5 rounded-lg p-1 w-fit ring-1 ring-white/10">
               <button
                 onClick={() => setMode('preset')}

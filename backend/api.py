@@ -19,9 +19,11 @@ import argparse
 import os
 import random
 import sqlite3
+import time
+from collections import defaultdict, deque
 from pathlib import Path
 
-from flask import Flask, jsonify, g, request
+from flask import Flask, jsonify, g, request, send_from_directory
 from flask_cors import CORS
 
 import re
@@ -54,6 +56,48 @@ def close_db(exception=None):
     db = g.pop("db", None)
     if db is not None:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting — only applies to endpoints that trigger a real Gemini call
+# and/or write a new transaction row (webhook_payment_failed,
+# trigger_customer_response). Deliberately NOT applied to
+# /api/webhook/razorpay — that one is already protected by HMAC signature
+# verification (an attacker without the secret can't get a 200 no matter how
+# many requests they send), so a second limiter there would only rate-limit
+# legitimate Razorpay retries.
+#
+# Simple in-memory sliding window, per source IP. This is a hackathon demo
+# behind a single free-tier instance, not a service that needs a shared
+# Redis-backed limiter across multiple processes — the goal is "a public demo
+# page can't accidentally or maliciously burn the whole Gemini/Razorpay quota
+# in a loop," not production-grade DDoS protection.
+# ---------------------------------------------------------------------------
+_RATE_LIMIT_MAX_REQUESTS = 10
+_RATE_LIMIT_WINDOW_SECONDS = 60
+_rate_limit_hits: dict[str, deque] = defaultdict(deque)
+
+
+def _rate_limited(key: str) -> bool:
+    now = time.monotonic()
+    hits = _rate_limit_hits[key]
+    while hits and now - hits[0] > _RATE_LIMIT_WINDOW_SECONDS:
+        hits.popleft()
+    if len(hits) >= _RATE_LIMIT_MAX_REQUESTS:
+        return True
+    hits.append(now)
+    return False
+
+
+def _client_ip() -> str:
+    # Render (and most PaaS) sit behind a proxy — the real client IP is in
+    # X-Forwarded-For, not request.remote_addr (which would just be the
+    # proxy's own address, collapsing every visitor into one rate-limit
+    # bucket). Falls back to remote_addr for local/direct requests.
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +169,13 @@ def webhook_payment_failed():
        same way. Only the fields this pipeline needs are read; anything
        else in the real Razorpay payload is ignored.
     """
+    if _rate_limited(_client_ip()):
+        return jsonify({
+            "error": f"Rate limit exceeded — max {_RATE_LIMIT_MAX_REQUESTS} requests per "
+                     f"{_RATE_LIMIT_WINDOW_SECONDS}s per visitor, to protect the shared Gemini/"
+                     "Razorpay quota on this public demo. Try again shortly."
+        }), 429
+
     body = request.get_json(silent=True) or {}
 
     # Unwrap a Razorpay-shaped webhook if that's what was sent.
@@ -185,6 +236,13 @@ def trigger_customer_response(txn_id):
 
     Body: {"response": "paid" | "ignored" | "promise_to_pay"}
     """
+    if _rate_limited(_client_ip()):
+        return jsonify({
+            "error": f"Rate limit exceeded — max {_RATE_LIMIT_MAX_REQUESTS} requests per "
+                     f"{_RATE_LIMIT_WINDOW_SECONDS}s per visitor, to protect the shared Gemini/"
+                     "Razorpay quota on this public demo. Try again shortly."
+        }), 429
+
     body = request.get_json(silent=True) or {}
     response = body.get("response")
     if response not in ("paid", "ignored", "promise_to_pay"):
@@ -799,14 +857,50 @@ def needs_human_count():
     return jsonify({"needs_human_count": n})
 
 
+# ---------------------------------------------------------------------------
+# Static frontend serving — production only.
+#
+# Local development is unaffected: Vite's own dev server (npm run dev, port
+# 5173) proxies /api/* to this Flask process per frontend/vite.config.js, and
+# frontend/dist won't exist locally unless you've explicitly run `npm run
+# build`, so this route falls through to a 404 exactly as before in dev.
+#
+# In production (e.g. Render), the build step runs `npm run build` first,
+# producing frontend/dist — this Flask process then serves that build
+# directly, so the whole app (dashboard + API) is one deployed service, one
+# URL, no cross-origin requests and no second service to configure.
+# ---------------------------------------------------------------------------
+FRONTEND_DIST = BACKEND_DIR.parent / "frontend" / "dist"
+
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path):
+    if not FRONTEND_DIST.is_dir():
+        return jsonify({
+            "error": "Frontend build not found. Run `npm run build` in frontend/, or use "
+                     "`npm run dev` (port 5173) for local development against this API."
+        }), 404
+    target = FRONTEND_DIST / path
+    if path and target.is_file():
+        return send_from_directory(FRONTEND_DIST, path)
+    # Anything else (a client-side route, or "/") falls back to index.html —
+    # this app has no client-side router today, but this keeps a direct
+    # reload of any future route from 404ing instead of loading the app shell.
+    return send_from_directory(FRONTEND_DIST, "index.html")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Recovery dashboard read-only API")
     parser.add_argument("--db", type=str, default=str(DEFAULT_DB_PATH))
-    parser.add_argument("--port", type=int, default=5001)
+    # Render (and most PaaS) inject the port to bind via $PORT and refuse
+    # traffic on anything else — default to that if set, else the usual 5001
+    # for local dev, so the exact same command works in both places.
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 5001)))
     parser.add_argument(
         "--host", type=str, default="127.0.0.1",
         help="bind address — use 0.0.0.0 to make /api/needs-human-count reachable "
-             "from an ESP32 or other device on the same LAN",
+             "from an ESP32 or other device on the same LAN, or when deployed",
     )
     args = parser.parse_args()
     app.config["DB_PATH"] = args.db

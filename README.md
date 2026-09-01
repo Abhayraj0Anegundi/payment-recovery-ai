@@ -300,6 +300,40 @@ py -3 api.py --db recovery_real.db --port 5001
 
 ---
 
+## Deploying it (so it's not only reachable from this laptop)
+
+`render.yaml` at the repo root deploys this as a single Render Web Service — one
+`gunicorn`-served Flask process that serves both the JSON API and the built React
+frontend from the same origin, so there's no separate frontend host and no cross-origin
+config to get wrong.
+
+1. Push this repo to GitHub, then in the Render dashboard: **New → Blueprint**, point it
+   at the repo. Render reads `render.yaml` and creates the service automatically.
+2. Set the four secret env vars Render will prompt for (`GEMINI_API_KEY`,
+   `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`) — same values as
+   `backend/.env` locally. `GEMINI_MODEL` is already set in `render.yaml`.
+3. Deploy. The build step runs `npm run build` (frontend) then installs backend
+   dependencies; the start command is
+   `gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 60 api:app`.
+4. `recovery.db` ships committed in the repo, so the deployed instance starts with the
+   exact same documented 92-transaction state — no separate seeding step needed.
+
+**Rate limiting on the two write endpoints** (`/api/webhook/payment-failed`,
+`/api/transactions/<id>/respond`) — 10 requests/minute per visitor IP, enforced in
+`api.py` via a simple in-memory sliding window — exists specifically because a public
+URL means anyone can trigger a real Gemini classification call or a real Razorpay
+Payment Link creation, and both of those draw down a shared, finite quota (see "The
+Razorpay quota story" below). `/api/webhook/razorpay` is deliberately NOT rate-limited
+the same way — it's already protected by HMAC signature verification, so an attacker
+without the webhook secret can't get past it regardless of request volume.
+
+**A consequence worth stating plainly**: once deployed, the transaction count is no
+longer only something *you* change — anyone with the URL who submits the Live Demo form
+adds a real, permanent row. This is treated the same way as the existing Refresh-button
+disclosure above: honestly labeled as live/growing, not frozen at 92, and not a bug.
+
+---
+
 ## Honest results — the actual run, not a cherry-picked one
 
 **90 seeded transactions processed** through the real pipeline in the original batch run,
