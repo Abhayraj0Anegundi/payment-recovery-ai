@@ -19,6 +19,7 @@ import argparse
 import os
 import random
 import sqlite3
+import threading
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -76,17 +77,27 @@ def close_db(exception=None):
 _RATE_LIMIT_MAX_REQUESTS = 10
 _RATE_LIMIT_WINDOW_SECONDS = 60
 _rate_limit_hits: dict[str, deque] = defaultdict(deque)
+# gunicorn runs this app with --threads (see render.yaml) for real
+# concurrency on the I/O-bound Gemini/Razorpay calls, so multiple requests
+# can call _rate_limited() at genuinely the same time, sharing one process's
+# memory. A plain dict/deque mutation isn't atomic across threads, so
+# without this lock two simultaneous requests could both read the same
+# "not yet at the limit" state and both get waved through — a real,
+# if narrow, race window. The lock is only held for the few microseconds
+# of list bookkeeping below, not for the network call itself.
+_rate_limit_lock = threading.Lock()
 
 
 def _rate_limited(key: str) -> bool:
     now = time.monotonic()
-    hits = _rate_limit_hits[key]
-    while hits and now - hits[0] > _RATE_LIMIT_WINDOW_SECONDS:
-        hits.popleft()
-    if len(hits) >= _RATE_LIMIT_MAX_REQUESTS:
-        return True
-    hits.append(now)
-    return False
+    with _rate_limit_lock:
+        hits = _rate_limit_hits[key]
+        while hits and now - hits[0] > _RATE_LIMIT_WINDOW_SECONDS:
+            hits.popleft()
+        if len(hits) >= _RATE_LIMIT_MAX_REQUESTS:
+            return True
+        hits.append(now)
+        return False
 
 
 def _client_ip() -> str:

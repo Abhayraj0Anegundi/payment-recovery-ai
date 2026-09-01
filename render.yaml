@@ -7,7 +7,17 @@ services:
     buildCommand: >
       cd frontend && npm install && npm run build &&
       cd ../backend && pip install -r requirements.txt
-    startCommand: cd backend && gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 60 api:app
+    # Deliberately 1 worker, not 2+: this app has two things that only work
+    # correctly within a single process — the in-memory rate limiter
+    # (api.py's _rate_limit_hits dict) and the single-file SQLite database.
+    # Multiple gunicorn workers are separate OS processes, each with its own
+    # copy of that dict, so a 2-worker setup silently made the rate limiter
+    # ~2x less effective and non-deterministic about which "bucket" a
+    # request landed in (found via live testing — 12 rapid requests all
+    # succeeded when the 11th+ should have been rate-limited). --threads
+    # gives real concurrency for the I/O-bound Gemini/Razorpay calls without
+    # that problem, since threads share the same process memory.
+    startCommand: cd backend && gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60 api:app
     envVars:
       - key: GEMINI_API_KEY
         sync: false
