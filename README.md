@@ -1,5 +1,9 @@
 # AI Revenue Recovery — Hinglish-Voice Payment Recovery Agent
 
+**Live: [payment-recovery-ai.onrender.com](https://payment-recovery-ai.onrender.com)** — a
+free-tier instance, so the first request after a period of inactivity can take up to ~50s to
+wake up. See "Deploying it" below for what's actually running there.
+
 A payment-failure recovery pipeline built for Razorpay's "AI Revenue Recovery" hackathon
 track. It classifies why a payment failed, picks a recovery strategy from a **fixed,
 non-negotiable decision table** (never invented by an LLM), writes a natural Hinglish
@@ -37,6 +41,14 @@ instead of left to be discovered mid-review:
    independent random seeds; the ordering (insufficient_funds < bank_timeout) held in
    all 30. That doesn't make the *absolute* numbers (38.1%, 76.9%) real-world facts — it
    means the *relative pattern* the dashboard highlights isn't sampling noise.
+4. **The live deployment's transaction count will not exactly match the "92" cited
+   throughout this README.** Every visitor to the live URL who submits the Live Demo
+   form adds a real, permanent row to that instance's database — this was true and
+   disclosed for local Refresh-button usage before, and now applies to anyone with the
+   link, not just the author. The 92-transaction numbers below describe the *committed*
+   `recovery.db` in this repo, reproducible by running the project locally without
+   clicking anything write-triggering; the live site's numbers are expected to drift
+   upward from there and are correct to do so.
 
 None of this is a late-discovered flaw — it's a direct consequence of building a batch
 demo without a live payments business generating real failure/recovery data, which no
