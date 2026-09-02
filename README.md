@@ -16,6 +16,38 @@ reported the way it actually happened.
 
 ---
 
+## Screenshots
+
+All captured from the live deployed instance linked above, not localhost — this is what
+the site actually looks like right now, not a mockup.
+
+**Landing page — the pitch, the real proof-stat strip, and the decision table:**
+
+<img src="docs/screenshots/01-landing-hero.png" width="800" alt="Landing page hero section">
+<img src="docs/screenshots/03-landing-how-it-works.png" width="800" alt="How it works section">
+<img src="docs/screenshots/04-landing-decision-table.png" width="800" alt="Decision table section">
+
+**Dashboard — live metrics, the Live Demo panel, and the 'try to break it' challenge:**
+
+<img src="docs/screenshots/05-dashboard-overview.png" width="800" alt="Dashboard overview with Live Demo panel">
+
+**Revenue Impact and System Guarantees — the numbers behind the claims:**
+
+<img src="docs/screenshots/06-dashboard-revenue-impact.png" width="800" alt="Revenue Impact panel">
+<img src="docs/screenshots/07-dashboard-system-guarantees.png" width="800" alt="System Guarantees panel">
+
+**Message quality and the Kanban board:**
+
+<img src="docs/screenshots/09-dashboard-message-showcase.png" width="800" alt="Message quality comparison">
+<img src="docs/screenshots/10-dashboard-kanban.png" width="800" alt="Kanban board">
+
+**A transaction's full decision + audit trail, and the guided Story Mode walkthrough:**
+
+<img src="docs/screenshots/11-transaction-detail-modal.png" width="800" alt="Transaction detail modal with audit trail">
+<img src="docs/screenshots/12-story-mode-step.png" width="800" alt="Story mode guided walkthrough">
+
+---
+
 ## Read this first: what's real, what's simulated, and why
 
 Three things a reviewer should know before looking at any number below, stated plainly
