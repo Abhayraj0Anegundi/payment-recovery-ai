@@ -211,24 +211,26 @@ board as everything else.
 ### A visual read, not just a wall of numbers
 
 <p align="center">
-  <img src="docs/screenshots/13-outcome-visual.png" width="800" alt="Animated donut chart and per-cause bars, live from the same summary/by-cause data">
+  <img src="docs/screenshots/13-outcome-visual.png" width="800" alt="A live, animated recovery-rate hero figure with stat cards and per-cause bars, from the same summary/by-cause data">
 </p>
 
 Right below the Live Demo panel, `OutcomeVisual.jsx` renders the same
-`/api/metrics/summary` and `/api/metrics/by-cause` data every other panel reads — as an
-animated donut chart (recovered / promise-to-pay / needs-human / in-progress, as
-proportions of the total) plus a live per-cause recovery-rate bar comparison — instead of
-requiring a reader to parse another stat table. No new endpoint, no separate state: it's
-the exact same `summary`/`byCause` props `MetricsHeader.jsx` and
-`CauseBreakdownTable.jsx` already receive from `App.jsx`.
+`/api/metrics/summary` and `/api/metrics/by-cause` data every other panel reads — as a
+single glanceable hero figure (the live recovery rate, with a soft glow on a dark radial
+backdrop) plus a small row of colored outcome stat cards and a per-cause recovery-rate
+breakdown — instead of requiring a reader to parse another stat table. No new endpoint,
+no separate state: it's the exact same `summary`/`byCause` props `MetricsHeader.jsx` and
+`CauseBreakdownTable.jsx` already receive from `App.jsx`. (This went through 3 visual
+iterations — a donut, then a Sankey-style flow diagram, then this — before landing;
+earlier attempts weren't the wrong data, just the wrong shape for it.)
 
-**It genuinely re-renders on new data, not just on first load.** Both the donut's arc
-lengths and the cause bars interpolate from their previous value to the new one whenever
-the underlying numbers change — the same tween pattern `AnimatedNumber.jsx` uses for
-counting numbers up — so clicking Refresh (which adds 2-3 real transactions, see below)
-visibly nudges the rings and bars, not just the numbers next to them. Verified directly:
-three consecutive Refresh clicks during testing moved the total from 92 → 94 → 97 → 100
-and the chart correctly recomputed and re-rendered every time, with no stale state.
+**It genuinely re-renders on new data, not just on first load.** The hero percentage,
+every stat card count, and every per-cause figure interpolates from its previous value to
+the new one whenever the underlying numbers change — the same tween pattern
+`AnimatedNumber.jsx` uses for counting numbers up — so clicking Refresh (which adds 2-3
+real transactions, see below) visibly animates the figures, not just replaces them.
+Verified directly across multiple Refresh clicks during testing: the panel correctly
+recomputed and re-rendered every time, with no stale state.
 
 ### Live traffic simulation on Refresh
 
