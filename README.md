@@ -1,86 +1,80 @@
 # AI Revenue Recovery — Hinglish-Voice Payment Recovery Agent
 
-**Live: [payment-recovery-ai.onrender.com](https://payment-recovery-ai.onrender.com)** — a
-free-tier instance, so the first request after a period of inactivity can take up to ~50s to
-wake up. See "Deploying it" below for what's actually running there.
+A payment-failure recovery pipeline built for Razorpay's **"AI Revenue Recovery"**
+hackathon track. It classifies why a payment failed, picks a recovery strategy from a
+**fixed, non-negotiable decision table** (never invented by an LLM), writes a natural
+Hinglish WhatsApp-style nudge that names the actual failure reason, creates a real
+Razorpay test-mode Payment Link, and logs every step to an auditable SQLite trail.
 
-A payment-failure recovery pipeline built for Razorpay's "AI Revenue Recovery" hackathon
-track. It classifies why a payment failed, picks a recovery strategy from a **fixed,
-non-negotiable decision table** (never invented by an LLM), writes a natural Hinglish
-WhatsApp-style nudge that names the actual failure reason, creates a real Razorpay
-test-mode Payment Link, and logs every step to an auditable SQLite trail.
+**Live demo:** [payment-recovery-ai.onrender.com](https://payment-recovery-ai.onrender.com)
+*(free-tier instance — the first request after a period of inactivity can take up to ~50s
+to wake up. See [Deployment](#deployment) for what's actually running there.)*
 
 The design brief was explicit: **correctness, auditability, and honest metrics over a
-flashier demo.** Everything below — including the parts that didn't go smoothly — is
-reported the way it actually happened.
+flashier demo.** Everything in this document — including the parts that didn't go
+smoothly — is reported the way it actually happened.
+
+<p align="center">
+  <img src="docs/screenshots/01-landing-hero.png" width="800" alt="Landing page hero">
+</p>
 
 ---
 
-## Screenshots
+## Contents
 
-All captured from the live deployed instance linked above, not localhost — this is what
-the site actually looks like right now, not a mockup.
-
-**Landing page — the pitch, the real proof-stat strip, and the decision table:**
-
-<img src="docs/screenshots/01-landing-hero.png" width="800" alt="Landing page hero section">
-<img src="docs/screenshots/03-landing-how-it-works.png" width="800" alt="How it works section">
-<img src="docs/screenshots/04-landing-decision-table.png" width="800" alt="Decision table section">
-
-**Dashboard — live metrics, the Live Demo panel, and the 'try to break it' challenge:**
-
-<img src="docs/screenshots/05-dashboard-overview.png" width="800" alt="Dashboard overview with Live Demo panel">
-
-**Revenue Impact and System Guarantees — the numbers behind the claims:**
-
-<img src="docs/screenshots/06-dashboard-revenue-impact.png" width="800" alt="Revenue Impact panel">
-<img src="docs/screenshots/07-dashboard-system-guarantees.png" width="800" alt="System Guarantees panel">
-
-**Message quality and the Kanban board:**
-
-<img src="docs/screenshots/09-dashboard-message-showcase.png" width="800" alt="Message quality comparison">
-<img src="docs/screenshots/10-dashboard-kanban.png" width="800" alt="Kanban board">
-
-**A transaction's full decision + audit trail, and the guided Story Mode walkthrough:**
-
-<img src="docs/screenshots/11-transaction-detail-modal.png" width="800" alt="Transaction detail modal with audit trail">
-<img src="docs/screenshots/12-story-mode-step.png" width="800" alt="Story mode guided walkthrough">
+- [Read this first](#read-this-first-whats-real-whats-simulated-and-why) — what's real, what's simulated
+- [What this is not](#what-this-is-not)
+- [Architecture](#architecture)
+- [The decision table](#the-decision-table-fixed-never-llm-generated) — fixed, never LLM-generated
+- [The 3-attempt hard cap](#the-3-attempt-hard-cap)
+- [Live demo mode](#live-demo-mode-not-just-a-batch-report)
+  - [Live traffic simulation on Refresh](#live-traffic-simulation-on-refresh)
+  - [A real Razorpay webhook](#a-real-razorpay-webhook-not-another-button-click)
+  - ["Try to break the safety net"](#try-to-break-the-safety-net)
+- [Running it locally](#running-it-locally)
+- [Deployment](#deployment)
+- [Results](#results-the-actual-run-not-a-cherry-picked-one)
+  - [The Razorpay quota story](#the-razorpay-quota-story-told-plainly)
+  - [Revenue impact — money, not just percentages](#revenue-impact-money-not-just-percentages)
+- [Does this learn?](#does-this-learn-yes-retry-timing-does-the-strategy-table-never-does)
+- [When the LLM isn't sure](#what-if-the-llms-classification-is-wrong-it-tells-you-when-it-isnt-sure)
+- [Regulatory reality check](#regulatory-reality-check-dnd-consent-and-rbi-told-plainly)
+- [Reference](#reference) — data model, project layout, ESP32 addon, demo artifacts
 
 ---
 
 ## Read this first: what's real, what's simulated, and why
 
-Three things a reviewer should know before looking at any number below, stated plainly
+Four things a reviewer should know before looking at any number below, stated plainly
 instead of left to be discovered mid-review:
 
 1. **113 of 119 payment links (≈95%) in `recovery.db` are disclosed mocks, not real
    Razorpay links.** Razorpay's test-mode API caps a business at 30 Payment Links,
-   non-resetting. That cap was hit partway through the batch, documented in full below —
-   6 links are genuinely real, verifiable in the Razorpay test dashboard, and prove the
-   integration works end-to-end. A second, smaller batch (`recovery_real.db`) exists
-   specifically to show 100% real links with zero mocking — see below.
-2. **Every recovery-rate number on this dashboard (62.6%, the per-cause breakdown, the
+   non-resetting. That cap was hit partway through the batch, documented in full under
+   [The Razorpay quota story](#the-razorpay-quota-story-told-plainly) — 6 links are
+   genuinely real, verifiable in the Razorpay test dashboard, and prove the integration
+   works end-to-end. A second, smaller batch (`recovery_real.db`) exists specifically to
+   show 100% real links with zero mocking.
+2. **Every recovery-rate number on this dashboard (62.0%, the per-cause breakdown, the
    "Adaptive Insight" panel) is computed from *simulated* customer responses, not
    measured real-world behavior.** `pipeline.py`'s `_OUTCOME_WEIGHTS` are hand-picked
    probabilities (e.g. "a bank-timeout retry succeeds 55% of the time"), not something
    discovered from real customers. The classify → decide → message → link pipeline is
    100% real; whether a given simulated customer "pays" afterward is a weighted coin
-   flip. The dashboard now marks every recovery-rate figure with a **"simulated
-   outcomes"** badge so this is visible at the point of display, not just here.
-3. **The gap between causes (e.g. insufficient_funds recovering worse than
-   bank_timeout) is a real, stable property of the simulation weights, not a lucky
+   flip. The dashboard marks every recovery-rate figure with a **"simulated outcomes"**
+   badge so this is visible at the point of display, not just here.
+3. **The gap between causes (e.g. `insufficient_funds` recovering worse than
+   `bank_timeout`) is a real, stable property of the simulation weights, not a lucky
    single run.** `backend/stability_check.py` re-runs the outcome simulation across 30
-   independent random seeds; the ordering (insufficient_funds < bank_timeout) held in
-   all 30. That doesn't make the *absolute* numbers (38.1%, 76.9%) real-world facts — it
-   means the *relative pattern* the dashboard highlights isn't sampling noise.
+   independent random seeds; the ordering held in all 30. That doesn't make the
+   *absolute* numbers real-world facts — it means the *relative pattern* the dashboard
+   highlights isn't sampling noise.
 4. **The live deployment's transaction count will not exactly match the "92" cited
-   throughout this README.** Every visitor to the live URL who submits the Live Demo
-   form adds a real, permanent row to that instance's database — this was true and
-   disclosed for local Refresh-button usage before, and now applies to anyone with the
-   link, not just the author. The 92-transaction numbers below describe the *committed*
-   `recovery.db` in this repo, reproducible by running the project locally without
-   clicking anything write-triggering; the live site's numbers are expected to drift
-   upward from there and are correct to do so.
+   throughout this README.** Anyone who submits the Live Demo form on the live URL adds
+   a real, permanent row to that instance's database. The numbers below describe the
+   *committed* `recovery.db` in this repo, reproducible by running the project locally
+   without clicking anything write-triggering; the live site's numbers are expected to
+   drift upward from there, and are correct to do so.
 
 None of this is a late-discovered flaw — it's a direct consequence of building a batch
 demo without a live payments business generating real failure/recovery data, which no
@@ -94,8 +88,8 @@ assuming a reader has already seen this section.
 - Not a generic "your payment failed, please retry" bot.
 - Not an LLM that decides what to do. The LLM only **explains** an already-chosen
   strategy and **writes the copy** for it — never picks the strategy itself.
-- Not a cherry-picked demo subset. All metrics below are computed live from the full
-  90-transaction batch, recomputed on every dashboard load, including the failure case.
+- Not a cherry-picked demo subset. All metrics are computed live from the full
+  92-transaction batch, recomputed on every dashboard load, including the failure case.
 
 ---
 
@@ -138,11 +132,15 @@ in the same SQLite commit — no side effect happens without an audit row.
 
 **Stack:** Python 3.14 (backend + pipeline), Flask (read-only API), SQLite (single-file
 audit log), Gemini API (`gemini-3.5-flash-lite`), Razorpay Test Mode API, React + Vite +
-Tailwind v4 (dashboard).
+Tailwind v4 (dashboard), deployed on Render (`gunicorn`).
 
 ---
 
 ## The decision table (fixed, never LLM-generated)
+
+<p align="center">
+  <img src="docs/screenshots/04-landing-decision-table.png" width="800" alt="The fixed decision table, as shown on the landing page">
+</p>
 
 | `razorpay_failure_code` | `root_cause`         | `strategy_chosen`   |
 |--------------------------|-----------------------|----------------------|
@@ -180,9 +178,12 @@ that attempt (there's no point nudging a customer you're escalating away from).
 ## Live demo mode — not just a batch report
 
 Everything above runs as a batch script against seeded data. To prove this is actual
-event-driven logic and not a one-off report generator, the dashboard also has a **Live
-Demo** panel that triggers the real pipeline on a brand-new transaction, live, in the
-browser:
+event-driven logic and not a one-off report generator, the dashboard has a **Live Demo**
+panel that triggers the real pipeline on a brand-new transaction, live, in the browser:
+
+<p align="center">
+  <img src="docs/screenshots/05-dashboard-overview.png" width="800" alt="Dashboard overview with the Live Demo panel and live metrics">
+</p>
 
 1. Pick a failure scenario and click "Trigger a real failed payment." This POSTs to
    `/api/webhook/payment-failed` — shaped like a real Razorpay `payment.failed` webhook
@@ -216,12 +217,12 @@ with ongoing traffic instead of a static report, and it is not faked — every o
 those transactions is a real classify → decide → Gemini message → Razorpay-or-mocked
 link → simulated customer response, written to the same audit trail as everything else.
 
-**Consequence, stated plainly**: the transaction count is not frozen at 91 — it grows by
-2-3 every time Refresh is clicked. The "Honest results" table below reflects the state
-*as originally documented*; the live dashboard will show a higher, still-honestly-computed
-total the moment anyone clicks Refresh. If you want to reproduce the exact documented
-numbers, don't click Refresh — the API returns the current live state on page load
-without it, and the numbers below match that initial state.
+**Consequence, stated plainly**: the transaction count is not frozen at 92 — it grows by
+2-3 every time Refresh is clicked. The [Results](#results-the-actual-run-not-a-cherry-picked-one)
+section reflects the state *as originally documented*; the live dashboard will show a
+higher, still-honestly-computed total the moment anyone clicks Refresh. To reproduce the
+exact documented numbers, don't click Refresh — the API returns the current live state on
+page load without it.
 
 ### A real Razorpay webhook, not another button click
 
@@ -268,9 +269,32 @@ Every delivery attempt — accepted or rejected — is logged to the `webhook_de
 table (`event_id`, `event_type`, `signature_valid`, raw payload), so even a rejected
 forgery attempt is auditable, not silently dropped.
 
+### "Try to break the safety net"
+
+<p align="center">
+  <img src="docs/screenshots/12-story-mode-step.png" width="800" alt="Guided Story Mode walkthrough overlay">
+</p>
+
+The Live Demo panel also has a dedicated entry point for adversarial input: type the
+vaguest, most contradictory failure note you can think of and watch what the pipeline
+does with it. The claim being made there is deliberately narrow and true by construction
+— not "the LLM will always guess right" (it won't always, and the project doesn't claim
+that), but "no input can make it invent a 5th cause, or send a customer a nudge based on a
+guess it isn't confident in." `classify_ambiguous_cause()` hard-rejects any cause outside
+the fixed 4 and any confidence outside `high`/`medium`/`low`, retries once, and falls back
+to a safe default (confidence forced to `"low"`, which auto-escalates) rather than ever
+silently proceeding on bad output. See [When the LLM isn't sure](#what-if-the-llms-classification-is-wrong-it-tells-you-when-it-isnt-sure)
+for the mechanism this relies on.
+
+For a guided tour of the same evidence without typing anything, the dashboard's
+**▶ Story mode** button (screenshot above) walks through 6 real panels in sequence — the
+Live Demo, the rule-table proof, the message showcase, the confidence-safety escalation,
+the audit trail, and the revenue impact — each with a caption explaining what it proves.
+It narrates the actual live dashboard, not a scripted screen recording.
+
 ---
 
-## Running it
+## Running it locally
 
 ### 1. Backend setup
 
@@ -286,7 +310,7 @@ GEMINI_API_KEY=<your Gemini API key>
 GEMINI_MODEL=gemini-3.5-flash-lite
 RAZORPAY_KEY_ID=<your Razorpay test key id>
 RAZORPAY_KEY_SECRET=<your Razorpay test key secret>
-RAZORPAY_WEBHOOK_SECRET=<webhook secret, only needed for /api/webhook/razorpay — see below>
+RAZORPAY_WEBHOOK_SECRET=<webhook secret, only needed for /api/webhook/razorpay — see above>
 ```
 
 ### 2. Seed the batch
@@ -304,6 +328,9 @@ classification path.
 ```bash
 py -3 -m unittest test_classifier -v
 ```
+
+31 tests, covering the fixed decision table, the 3-attempt hard cap, the low-confidence
+escalation override, and the quartile-derived adaptive delay.
 
 ### 4. Run the full pipeline
 
@@ -329,14 +356,8 @@ npm install
 npm run dev
 ```
 
-Open the printed `localhost` URL (default `http://localhost:5173`). The dashboard shows,
-top to bottom: live recovery metrics, a funnel, a "System Guarantees" panel (structural
-claims like "0 of 129 strategy decisions made by LLM," computed live), a per-cause
-breakdown table, a Hinglish message quality showcase (real output vs. a generic baseline),
-a pinned `needs_human` example, and the full 5-column kanban board — click any card for
-its complete decision + message + audit trail.
-
-To view the 100%-real-links batch instead, point the API at the other DB:
+Open the printed `localhost` URL (default `http://localhost:5173`). To view the
+100%-real-links batch instead, point the API at the other DB:
 
 ```bash
 py -3 api.py --db recovery_real.db --port 5001
@@ -344,7 +365,7 @@ py -3 api.py --db recovery_real.db --port 5001
 
 ---
 
-## Deploying it (so it's not only reachable from this laptop)
+## Deployment
 
 `render.yaml` at the repo root deploys this as a single Render Web Service — one
 `gunicorn`-served Flask process that serves both the JSON API and the built React
@@ -362,22 +383,23 @@ config to get wrong.
 4. `recovery.db` ships committed in the repo, so the deployed instance starts with the
    exact same documented 92-transaction state — no separate seeding step needed.
 
-**Rate limiting on the two write endpoints** (`/api/webhook/payment-failed`,
+**Rate limiting** on the two write endpoints (`/api/webhook/payment-failed`,
 `/api/transactions/<id>/respond`) — 10 requests/minute per visitor IP, enforced in
 `api.py` via a simple in-memory sliding window — exists specifically because a public
 URL means anyone can trigger a real Gemini classification call or a real Razorpay
-Payment Link creation, and both of those draw down a shared, finite quota (see "The
-Razorpay quota story" below). `/api/webhook/razorpay` is deliberately NOT rate-limited
-the same way — it's already protected by HMAC signature verification, so an attacker
-without the webhook secret can't get past it regardless of request volume.
+Payment Link creation, and both of those draw down a shared, finite quota (see
+[The Razorpay quota story](#the-razorpay-quota-story-told-plainly)). `/api/webhook/razorpay`
+is deliberately NOT rate-limited the same way — it's already protected by HMAC signature
+verification, so an attacker without the webhook secret can't get past it regardless of
+request volume.
 
 **Why `--workers 1 --threads 4`, not the more typical multi-worker setup**: found by
 actually stress-testing this deployment, not in theory — `--workers 2` silently made the
-rate limiter above ~2x less effective and non-deterministic, because each gunicorn worker
-is a separate OS process with its own private copy of the in-memory counter, so requests
-split across two uncoordinated limiters. One worker with threads keeps the limiter's
-state (and SQLite access) inside a single process, while threads still give real
-concurrency for the I/O-bound Gemini/Razorpay calls.
+rate limiter ~2x less effective and non-deterministic, because each gunicorn worker is a
+separate OS process with its own private copy of the in-memory counter, so requests split
+across two uncoordinated limiters. One worker with threads keeps the limiter's state (and
+SQLite access) inside a single process, while threads still give real concurrency for the
+I/O-bound Gemini/Razorpay calls.
 
 **A known rough edge on the free tier**: under rapid repeated testing, a small fraction of
 requests to the write endpoints returned `500` with no application-level error logged —
@@ -391,20 +413,18 @@ automated requests fired faster than a person would click.
 
 **A consequence worth stating plainly**: once deployed, the transaction count is no
 longer only something *you* change — anyone with the URL who submits the Live Demo form
-adds a real, permanent row. This is treated the same way as the existing Refresh-button
-disclosure above: honestly labeled as live/growing, not frozen at 92, and not a bug.
+adds a real, permanent row. This is treated the same way as the Refresh-button disclosure
+above: honestly labeled as live/growing, not frozen at 92, and not a bug.
 
 ---
 
-## Honest results — the actual run, not a cherry-picked one
+## Results: the actual run, not a cherry-picked one
 
 **90 seeded transactions processed** through the real pipeline in the original batch run,
 **plus 2 additional transactions (#96, #129)** added afterward via the dashboard's own
 Live Demo form and resolved through the same real pipeline — 92 total. Metrics below are
 pulled live from `GET /api/metrics/summary` and `/api/metrics/by-cause` against the
-committed `recovery.db` — reproducible by running the dashboard yourself, and they will
-keep changing slightly if you trigger more Live Demo transactions against this same file,
-which is expected: they're computed live, not frozen.
+committed `recovery.db` — reproducible by running the dashboard yourself.
 
 | Metric | Value |
 |---|---|
@@ -422,6 +442,10 @@ which is expected: they're computed live, not frozen.
 consistent with the intended weighting that bank-side transient failures recover more
 easily than low-balance ones):
 
+<p align="center">
+  <img src="docs/screenshots/08-dashboard-cause-breakdown.png" width="800" alt="Per-cause recovery breakdown table">
+</p>
+
 | Root cause | Total | Recovered | Promise | Needs Human | Recovery % |
 |---|---|---|---|---|---|
 | Bank Timeout | 27 | 20 | 4 | 3 | 74.1% |
@@ -430,9 +454,12 @@ easily than low-balance ones):
 | Insufficient Funds | 21 | 8 | 9 | 4 | **38.1%** |
 
 12 transactions genuinely reached `needs_human` — 11 after exhausting all 3 attempts, plus
-1 (#129, see below) escalated immediately on attempt 1 due to low-confidence
-classification. Both routes are visible and distinguishable in the dashboard's audit
-trail, not a hypothetical.
+1 (#129) escalated immediately on attempt 1 due to low-confidence classification. Both
+routes are visible and distinguishable in the dashboard's audit trail, not a hypothetical.
+
+<p align="center">
+  <img src="docs/screenshots/11-transaction-detail-modal.png" width="800" alt="A transaction's full decision and audit trail">
+</p>
 
 **Transaction #96 is worth calling out specifically**: it was created by typing
 `"idk what happened"` as a gateway note under the ambiguous `other` failure code — a
@@ -444,28 +471,27 @@ classification prompt's forbid-a-5th-label constraint working exactly as designe
 adversarial input, not just clean seeded data.
 
 **Transaction #129 is the concrete example of the low-confidence auto-escalation feature**
-(see "Does the LLM's uncertainty change behavior?" below): gateway note `"payment didnt
-go through, not sure why"`, classified by the LLM as `bank_timeout` but self-reported as
-**low confidence** — *"The gateway note is entirely vague and missing specific details,
-making this a blind guess."* The pipeline escalated straight to `needs_human` on attempt 1,
-never sending a nudge based on a guess. This is a real, live-triggered example, not a
-constructed test case description — the same webhook endpoint anyone can hit themselves.
+(see [When the LLM isn't sure](#what-if-the-llms-classification-is-wrong-it-tells-you-when-it-isnt-sure)):
+gateway note `"payment didnt go through, not sure why"`, classified by the LLM as
+`bank_timeout` but self-reported as **low confidence** — *"The gateway note is entirely
+vague and missing specific details, making this a blind guess."* The pipeline escalated
+straight to `needs_human` on attempt 1, never sending a nudge based on a guess. This is a
+real, live-triggered example, not a constructed test case description — the same webhook
+endpoint anyone can hit themselves.
 
----
-
-## The Razorpay quota story (told plainly)
+### The Razorpay quota story (told plainly)
 
 Razorpay's test-mode API enforces a **fixed, non-resetting cap of 30 Payment Links per
-business** (confirmed against their own documentation — this is not a rolling rate
-limit that clears over time; only Razorpay Support raising it, or a genuinely separate
-business account, unblocks more). Two different key pairs shared this same cap, since
-Razorpay scopes it per-business, not per-key-pair.
+business** (confirmed against their own documentation — this is not a rolling rate limit
+that clears over time; only Razorpay Support raising it, or a genuinely separate business
+account, unblocks more). Two different key pairs shared this same cap, since Razorpay
+scopes it per-business, not per-key-pair.
 
 **6 transactions in this run used genuinely real Razorpay test-mode Payment Links** —
 independently verifiable in the Razorpay test dashboard, created via the real
 `POST /v1/payment_links/` API with Basic Auth, `reference_id` traceability, and correct
-customer/amount data. This proves the integration is real and working end to end
-(see `backend/razorpay_client.py::create_payment_link`).
+customer/amount data. This proves the integration is real and working end to end (see
+`backend/razorpay_client.py::create_payment_link`).
 
 Once the account's 30-link cap was hit mid-run, the pipeline automatically and
 **transparently** switched to a disclosed mock-link fallback
@@ -473,9 +499,7 @@ Once the account's 30-link cap was hit mid-run, the pipeline automatically and
 attempts, so the full batch could complete and every dashboard column (including
 `needs_human`) could be demonstrated. Every single mocked link has its own `audit_log`
 row (`action='payment_link_mocked'` or `'razorpay_quota_exhausted'`) explaining exactly
-why — nowhere in the data is a mock link presented as, or confused with, a real one. This
-is the one deliberate, fully-disclosed deviation from "real links for every transaction,"
-made necessary by an external account limit rather than a pipeline shortcut.
+why — nowhere in the data is a mock link presented as, or confused with, a real one.
 
 ```sql
 -- verify for yourself (exact counts will grow if you trigger more Live Demo
@@ -487,10 +511,9 @@ GROUP BY action;
 -- payment_link_mocked | 113
 ```
 
-### A second, 100%-real batch (`recovery_real.db`)
-
-To fully close this gap rather than just disclose it, a second, smaller batch was run
-against a second Razorpay test account with a clean 30-link quota:
+**A second, 100%-real batch (`recovery_real.db`)** exists to fully close this gap rather
+than just disclose it — a smaller batch run against a second Razorpay test account with a
+clean 30-link quota:
 
 ```bash
 py -3 seed.py --count 18 --db recovery_real.db --seed 100
@@ -499,18 +522,10 @@ py -3 pipeline.py --db recovery_real.db --seed 2
 
 **Result: 18/18 transactions processed, 24/24 payment links genuinely real, 0 mocked.**
 Every column of the pipeline is demonstrated on real infrastructure, including a
-`needs_human` case that started from an ambiguous `other` failure code (LLM-classified
-as `bank_timeout` consistently across all 3 attempts, retried via real Razorpay links
-twice, then correctly escalated with no link created on attempt 3 — see transaction #4
-in `recovery_real.db`).
-
-```sql
-SELECT action, COUNT(*) FROM audit_log
-WHERE action IN ('create_payment_link','payment_link_mocked')
-GROUP BY action;
--- create_payment_link | 24
--- payment_link_mocked | (no rows)
-```
+`needs_human` case that started from an ambiguous `other` failure code (LLM-classified as
+`bank_timeout` consistently across all 3 attempts, retried via real Razorpay links twice,
+then correctly escalated with no link created on attempt 3 — see transaction #4 in
+`recovery_real.db`).
 
 | Metric (`recovery_real.db`) | Value |
 |---|---|
@@ -524,9 +539,11 @@ Run the dashboard against either database via `py -3 api.py --db recovery.db` (f
 honestly-disclosed batch) or `py -3 api.py --db recovery_real.db` (smaller, zero-mock
 batch) — same API, same frontend, just point it at the DB you want to show.
 
----
+### Revenue impact — money, not just percentages
 
-## What this means in money, not just percentages
+<p align="center">
+  <img src="docs/screenshots/06-dashboard-revenue-impact.png" width="800" alt="Revenue Impact panel with real rupee figures and a with/without counterfactual">
+</p>
 
 `GET /api/metrics/revenue-impact` and the dashboard's "Revenue Impact" panel exist because
 a recovery-rate percentage alone doesn't answer the question a business reviewer actually
@@ -540,19 +557,20 @@ other endpoint reads:
   nothing has actually been paid yet.
 
 **The "at scale" projection is clearly separated and labeled, not blended into the
-measured numbers**: it applies this dataset's own measured recovery rate (not an
-invented target) to a hypothetical 1,000-failed-payments/month volume at this dataset's
-own average transaction size, and states outright that it's a projection, not a
-measured result — because this pipeline has never run against a real business's live
-failed-payment stream (see "Read this first" above). The point isn't to claim a specific
-business outcome; it's to show the mechanism for translating a recovery rate into a
-number a CFO would actually look at, using only numbers this dataset already produces.
+measured numbers**: it applies this dataset's own measured recovery rate (not an invented
+target) to a hypothetical 1,000-failed-payments/month volume at this dataset's own average
+transaction size, and states outright that it's a projection, not a measured result —
+because this pipeline has never run against a real business's live failed-payment stream
+(see [Read this first](#read-this-first-whats-real-whats-simulated-and-why)). The point
+isn't to claim a specific business outcome; it's to show the mechanism for translating a
+recovery rate into a number a CFO would actually look at, using only numbers this dataset
+already produces.
 
 **The panel also shows the counterfactual explicitly** — "without any recovery pipeline"
-vs. "with it," as two comparison bars. The "without" number isn't modeled or estimated:
-a failed payment with zero follow-up stays failed by definition, so the baseline is ₹0,
-stated as such rather than left implicit. The entire ₹5,12,944 gap between the two bars
-is what this pipeline is actually being evaluated against.
+vs. "with it," as two comparison bars. The "without" number isn't modeled or estimated: a
+failed payment with zero follow-up stays failed by definition, so the baseline is ₹0,
+stated as such rather than left implicit. The entire ₹5,12,944 gap between the two bars is
+what this pipeline is actually being evaluated against.
 
 ---
 
@@ -566,11 +584,11 @@ adaptive**, computed live from this database's own outcome history
 Every non-terminal decision now also computes a **suggested retry delay**, derived from
 that cause's actual recovery rate so far in this exact database — not a hardcoded
 per-cause constant, not an LLM guess. A cause recovering well (e.g. `bank_timeout` at
-76.9%) gets a short suggested delay (retrying soon is working); a cause recovering
-poorly (e.g. `insufficient_funds` at 38.1%) gets a longer one (an immediate re-nudge
-won't help — give the customer time). The exact recovery-rate query and resulting delay
-are logged to `audit_log` (`action='compute_adaptive_delay'`) for every attempt, so the
-number behind each suggestion is always checkable, not asserted.
+74.1%) gets a short suggested delay (retrying soon is working); a cause recovering poorly
+(e.g. `insufficient_funds` at 38.1%) gets a longer one (an immediate re-nudge won't help —
+give the customer time). The exact recovery-rate query and resulting delay are logged to
+`audit_log` (`action='compute_adaptive_delay'`) for every attempt, so the number behind
+each suggestion is always checkable, not asserted.
 
 **The tier boundaries are computed live too, not hardcoded** (as of the v2 rewrite in
 `adaptive.py`). Earlier this used fixed thresholds (e.g. "recovery rate ≥70% → 1h delay")
@@ -583,16 +601,12 @@ in. `test_classifier.py::test_boundaries_shift_with_a_different_dataset_shape` p
 directly: the identical 55% recovery rate lands in a different tier depending on what the
 rest of the dataset looks like. This is still not a trained model — nothing converges,
 there's no loss function — and the code says so rather than overclaiming "machine
-learning." It's honestly "data-derived thresholds," which is a real, checkable step up
-from a fixed lookup table.
+learning." It's honestly "data-derived thresholds," a real, checkable step up from a
+fixed lookup table.
 
-```
-GET /api/metrics/adaptive-insight
-```
-
-still exists as a plain-language summary of the same signal (e.g. "Insufficient Funds
-recovers at 38.1% vs Bank Timeout at 76.9%") for the dashboard's "What the outcome data
-suggests" panel.
+`GET /api/metrics/adaptive-insight` still exists as a plain-language summary of the same
+signal (e.g. "Insufficient Funds recovers at 38.1% vs Bank Timeout at 74.1%") for the
+dashboard's "What the outcome data suggests" panel.
 
 **What stays fixed, on purpose**: `decisions.strategy_chosen` — which of the 4 fixed
 strategies applies to a cause — is never touched by this. Only `HOW LONG to wait` before
@@ -606,16 +620,20 @@ labeled default (12h) rather than pretending a tiny sample is a trustworthy rate
 
 This is visible on the dashboard as a small amber "ADAPTIVE" badge under each decision's
 reasoning (Live Demo panel and the transaction detail modal) — present for any decision
-made after this feature shipped; the original 91 seeded transactions predate it and show
-no badge, which is expected and disclosed rather than backfilled.
+made after this feature shipped; the original seeded transactions predate it and show no
+badge, which is expected and disclosed rather than backfilled.
 
 ---
 
 ## "What if the LLM's classification is wrong?" — it tells you when it isn't sure
 
-The classification prompt (`gemini_client.py::CLASSIFICATION_SYSTEM_INSTRUCTION`) now
-requires the LLM to self-report a confidence level — `high`, `medium`, or `low` — alongside
-every ambiguous-cause classification, and is explicitly instructed that an honest "low" is
+<p align="center">
+  <img src="docs/screenshots/07-dashboard-system-guarantees.png" width="800" alt="System Guarantees panel with live-computed structural claims">
+</p>
+
+The classification prompt (`gemini_client.py::CLASSIFICATION_SYSTEM_INSTRUCTION`) requires
+the LLM to self-report a confidence level — `high`, `medium`, or `low` — alongside every
+ambiguous-cause classification, and is explicitly instructed that an honest "low" is
 better than an inflated "high": *"a wrong 'high' is worse than an honest 'low'."*
 
 **That confidence isn't decorative — it changes behavior.** `classifier.py::
@@ -630,10 +648,10 @@ definition, so it gets the identical escalation treatment.
 
 This is real, not asserted: `/api/metrics/system-guarantees` reports
 `confidence_safety.low_confidence_auto_escalations` out of
-`confidence_safety.low_confidence_classifications`, computed live from
-`audit_log` rows with `action='escalate_low_confidence'` — the number is 1 of 1 in the
-current `recovery.db` (see transaction #129 above), and will always equal the total count
-of low-confidence classifications, because the code path that produces one *is* the same
+`confidence_safety.low_confidence_classifications`, computed live from `audit_log` rows
+with `action='escalate_low_confidence'` — the number is 1 of 1 in the current
+`recovery.db` (see transaction #129 above), and will always equal the total count of
+low-confidence classifications, because the code path that produces one *is* the same
 code path that escalates it. The dashboard shows a color-coded confidence badge (teal
 high / amber medium / rose low) on every LLM-classified decision, in both the Live Demo
 panel and the transaction detail modal.
@@ -667,20 +685,14 @@ doesn't handle, rather than pretending the gap isn't there.
   `ValueError` past attempt 3 rather than asking an LLM to please stop.
 
 **What this build does and doesn't do about it:**
-- ✅ Hard-capped attempts (3, structurally enforced) and a full audit trail of every
-  message sent — both are exactly what a compliance review would ask for first.
-- ✅ Fixed, auditable decision logic — a regulator or auditor can read `classifier.py`
-  and know in advance what the system will do, with no LLM judgment call in that path.
-- ❌ **No opt-out / STOP handling.** There is no `consent` or `opted_out` column, no
-  "reply STOP to unsubscribe" flow, and no check against one before sending a nudge. Every
-  seeded transaction in this demo is treated as contactable.
-- ❌ **No WhatsApp template pre-approval.** The Hinglish messages are free-form LLM
-  output, which is correct for demonstrating message quality but is not how a real
-  WhatsApp Business integration would be allowed to send transactional messages at scale.
-- ❌ **No message-frequency governor beyond the attempt cap** — 3 total contacts is a
-  reasonable ceiling on its own, but a production system would also need cooldown windows
-  between attempts, which `adaptive.py`'s retry-delay suggestion is a step toward but
-  doesn't yet enforce as a hard constraint.
+
+| | |
+|---|---|
+| ✅ | Hard-capped attempts (3, structurally enforced) and a full audit trail of every message sent — both are exactly what a compliance review would ask for first. |
+| ✅ | Fixed, auditable decision logic — a regulator or auditor can read `classifier.py` and know in advance what the system will do, with no LLM judgment call in that path. |
+| ❌ | **No opt-out / STOP handling.** There is no `consent` or `opted_out` column, no "reply STOP to unsubscribe" flow, and no check against one before sending a nudge. Every seeded transaction in this demo is treated as contactable. |
+| ❌ | **No WhatsApp template pre-approval.** The Hinglish messages are free-form LLM output, which is correct for demonstrating message quality but is not how a real WhatsApp Business integration would be allowed to send transactional messages at scale. |
+| ❌ | **No message-frequency governor beyond the attempt cap** — 3 total contacts is a reasonable ceiling on its own, but a production system would also need cooldown windows between attempts, which `adaptive.py`'s retry-delay suggestion is a step toward but doesn't yet enforce as a hard constraint. |
 
 Closing these wasn't in scope for a hackathon build, and no other project in this track is
 likely to have solved DND/consent/template-approval end-to-end either — but knowing
@@ -690,7 +702,9 @@ overclaiming a compliance feature that isn't actually implemented.
 
 ---
 
-## Data model
+## Reference
+
+### Data model
 
 See [`backend/schema.sql`](backend/schema.sql) for the full DDL. Five tables:
 `transactions`, `decisions`, `messages`, `audit_log`, `outcomes` — matching the spec's
@@ -698,7 +712,19 @@ data model, with CHECK constraints enforcing the fixed vocabularies (failure cod
 causes, strategies, statuses, actors) at the database level, not just in application
 code.
 
-## Project layout
+### Message quality
+
+<p align="center">
+  <img src="docs/screenshots/09-dashboard-message-showcase.png" width="800" alt="Real Gemini-generated Hinglish message vs a generic baseline">
+</p>
+
+### Kanban board
+
+<p align="center">
+  <img src="docs/screenshots/10-dashboard-kanban.png" width="800" alt="Five-column kanban board, live from the transactions table">
+</p>
+
+### Project layout
 
 ```
 backend/
@@ -712,10 +738,11 @@ backend/
                           isn't a lucky single sample (see "Read this first")
   gemini_client.py     — the 2 narrow Gemini prompts + JSON parsing/fallback
   razorpay_client.py   — real Payment Link creation + disclosed mock fallback
+  razorpay_webhook.py  — HMAC-SHA256 signature verification for the real webhook
   pipeline.py          — batch orchestrator, 3-attempt loop, audit logging
-  api.py               — Flask API; metrics endpoints read-only, plus 2 write
+  api.py               — Flask API; metrics endpoints read-only, plus write
                           endpoints for the Live Demo (real webhook + response)
-  recovery.db          — full ~90-txn batch (6 real + 113 disclosed-mock links)
+  recovery.db          — full ~92-txn batch (6 real + 113 disclosed-mock links)
   recovery_real.db     — 18-txn batch, 24/24 links genuinely real, 0 mocked
 frontend/
   src/
@@ -723,27 +750,30 @@ frontend/
     constants.js                  — shared labels/colors
     simulateActivity.js           — Refresh-triggered live traffic simulation
     components/
+      LandingPage.jsx             — marketing/explainer front page
+      StoryMode.jsx                — guided spotlight walkthrough of 6 real panels
       MetricsHeader.jsx           — recovery rate, funnel, needs-human count
       SystemGuarantees.jsx        — live-computed "not a black box" numbers
       CauseBreakdownTable.jsx
       AdaptiveInsight.jsx         — the outcome-data-suggests panel
       RevenueImpact.jsx           — rupee-value recovery + labeled scale projection
       MessageShowcase.jsx         — real Hinglish output vs generic baseline
-      LiveDemo.jsx                — real webhook + simulated-response trigger
+      LiveDemo.jsx                — real webhook + simulated-response trigger,
+                                     including the "try to break it" entry point
       KanbanBoard.jsx             — 5-column board, live from /api/transactions
       TransactionDetailModal.jsx  — full decision + message + audit trail
       AnimatedNumber.jsx          — count-up/flash effect for live-updating stats
       SyntheticDataBadge.jsx      — "simulated outcomes" disclosure, shown
                                      wherever a recovery-rate number appears
     App.jsx
+render.yaml             — Render Blueprint (single-service deploy config)
 ```
 
-## Optional: ESP32 needs-human LED
+### Optional: ESP32 needs-human LED
 
 `GET /api/needs-human-count` returns `{"needs_human_count": N}` — a single-purpose
-read-only endpoint an ESP32 polls to light an LED when `N > 0` (currently 11 in
-`recovery.db`). Firmware, wiring diagram, and setup steps are in
-[`esp32/needs_human_led.ino`](esp32/needs_human_led.ino) and
+read-only endpoint an ESP32 polls to light an LED when `N > 0`. Firmware, wiring diagram,
+and setup steps are in [`esp32/needs_human_led.ino`](esp32/needs_human_led.ino) and
 [`esp32/README.md`](esp32/README.md). Purely additive — it never touches the pipeline,
 database, or audit trail, and the core submission doesn't depend on it.
 
@@ -754,15 +784,13 @@ interfaces instead of just localhost:
 py -3 api.py --db recovery.db --host 0.0.0.0 --port 5001
 ```
 
----
+### Two demo artifacts, two different stories
 
-## Two demo artifacts, two different stories
-
-- **`recovery.db`** — the full ~90-transaction batch, computed with honest metrics at
-  real scale (90 from the original seeded run, plus any Live Demo transactions triggered
-  since). 6 real links + the rest disclosed mocks (see above). This is the number to cite
-  for "recovery rate," "per-cause breakdown," and "avg attempts to recovery" — it's the
-  one with enough volume for those to mean something statistically.
+- **`recovery.db`** — the full ~92-transaction batch, computed with honest metrics at
+  real scale. 6 real links + the rest disclosed mocks (see
+  [The Razorpay quota story](#the-razorpay-quota-story-told-plainly)). This is the number
+  to cite for "recovery rate," "per-cause breakdown," and "avg attempts to recovery" —
+  it's the one with enough volume for those to mean something statistically.
 - **`recovery_real.db`** — an 18-transaction batch where literally every payment link is
   real, verifiable in the Razorpay test dashboard, with no mocking anywhere in the trail.
   This is the one to point to if asked "is any of this faked" — the answer for this batch
