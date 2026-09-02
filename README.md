@@ -28,6 +28,7 @@ smoothly — is reported the way it actually happened.
 - [The decision table](#the-decision-table-fixed-never-llm-generated) — fixed, never LLM-generated
 - [The 3-attempt hard cap](#the-3-attempt-hard-cap)
 - [Live demo mode](#live-demo-mode-not-just-a-batch-report)
+  - [A visual read, not just a wall of numbers](#a-visual-read-not-just-a-wall-of-numbers)
   - [Live traffic simulation on Refresh](#live-traffic-simulation-on-refresh)
   - [A real Razorpay webhook](#a-real-razorpay-webhook-not-another-button-click)
   - ["Try to break the safety net"](#try-to-break-the-safety-net)
@@ -206,6 +207,28 @@ around the same `process_one_attempt` / `record_customer_response` functions
 `pipeline.py`'s batch loop calls internally. A transaction created this way lives in the
 same `transactions` table, gets the same audit trail, and shows up in the same kanban
 board as everything else.
+
+### A visual read, not just a wall of numbers
+
+<p align="center">
+  <img src="docs/screenshots/13-outcome-visual.png" width="800" alt="Animated donut chart and per-cause bars, live from the same summary/by-cause data">
+</p>
+
+Right below the Live Demo panel, `OutcomeVisual.jsx` renders the same
+`/api/metrics/summary` and `/api/metrics/by-cause` data every other panel reads — as an
+animated donut chart (recovered / promise-to-pay / needs-human / in-progress, as
+proportions of the total) plus a live per-cause recovery-rate bar comparison — instead of
+requiring a reader to parse another stat table. No new endpoint, no separate state: it's
+the exact same `summary`/`byCause` props `MetricsHeader.jsx` and
+`CauseBreakdownTable.jsx` already receive from `App.jsx`.
+
+**It genuinely re-renders on new data, not just on first load.** Both the donut's arc
+lengths and the cause bars interpolate from their previous value to the new one whenever
+the underlying numbers change — the same tween pattern `AnimatedNumber.jsx` uses for
+counting numbers up — so clicking Refresh (which adds 2-3 real transactions, see below)
+visibly nudges the rings and bars, not just the numbers next to them. Verified directly:
+three consecutive Refresh clicks during testing moved the total from 92 → 94 → 97 → 100
+and the chart correctly recomputed and re-rendered every time, with no stale state.
 
 ### Live traffic simulation on Refresh
 

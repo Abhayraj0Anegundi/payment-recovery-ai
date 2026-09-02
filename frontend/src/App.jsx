@@ -3,6 +3,7 @@ import { api } from './api'
 import { simulateFreshActivity } from './simulateActivity'
 import LandingPage from './components/LandingPage'
 import StoryMode, { STORY_STEPS } from './components/StoryMode'
+import OutcomeVisual from './components/OutcomeVisual'
 import MetricsHeader from './components/MetricsHeader'
 import RevenueImpact from './components/RevenueImpact'
 import CauseBreakdownTable from './components/CauseBreakdownTable'
@@ -184,6 +185,8 @@ function App() {
             <div data-story="live-demo">
               <LiveDemo onResolved={loadAll} />
             </div>
+
+            <OutcomeVisual summary={summary} byCause={byCause} />
 
             <MetricsHeader summary={summary} />
 
