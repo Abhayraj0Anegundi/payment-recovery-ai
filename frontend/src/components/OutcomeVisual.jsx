@@ -4,30 +4,18 @@ import SyntheticDataBadge from './SyntheticDataBadge'
 
 // A genuinely visual, at-a-glance read of the same summary/byCause data
 // every other panel already fetches — no new endpoint, no new state in
-// App.jsx beyond what's already passed down. A semi-circular gauge (the
-// hero element) plus a set of glass legend chips and gradient cause bars,
-// all tweening from their previous rendered value to the new one on every
-// data change — including a live Refresh, not just first load.
+// App.jsx beyond what's already passed down. A flowing pipeline/funnel
+// diagram (failed -> contacted -> recovered/promise/needs-human) as the
+// hero element, told as a story of what happens to a payment rather than
+// a static ratio — plus a set of live cause-recovery bars beneath it.
+// Every number and every ribbon width tweens from its previous rendered
+// value to the new one on every data change, including a live Refresh.
 
-const SEGMENT_ORDER = [
+const OUTCOME_NODES = [
   { key: 'recovered', label: 'Recovered', color: '#35d3a8', glow: 'rgba(53,211,168,0.55)' },
   { key: 'promise_to_pay', label: 'Promise to Pay', color: '#fbbf24', glow: 'rgba(251,191,36,0.5)' },
   { key: 'needs_human', label: 'Needs Human', color: '#fb7185', glow: 'rgba(251,113,133,0.5)' },
-  { key: 'contacted', label: 'In Progress', color: '#7c93ff', glow: 'rgba(124,147,255,0.5)' },
 ]
-
-// Semi-circular gauge geometry — a 180° arc from 9 o'clock to 3 o'clock,
-// read left-to-right like a speedometer. More distinctive than a full
-// donut and reads "at a glance" faster: sweep angle IS the fill amount.
-const GAUGE_R = 92
-const GAUGE_CX = 130
-const GAUGE_CY = 118
-const ARC_LEN = Math.PI * GAUGE_R // half the circumference — the full sweep
-
-function polarToXY(cx, cy, r, angleDeg) {
-  const rad = ((angleDeg - 180) * Math.PI) / 180
-  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
-}
 
 function useTween(target, durationMs = 900) {
   const [display, setDisplay] = useState(target)
@@ -96,102 +84,152 @@ function useTweenArray(targets, durationMs = 900) {
   return display
 }
 
-function Gauge({ summary }) {
-  const total = summary.total_transactions || 1
-  const rawCounts = SEGMENT_ORDER.map((s) => summary.status_counts[s.key] || 0)
-  const targetLengths = rawCounts.map((c) => (c / total) * ARC_LEN)
-  const tweened = useTweenArray(targetLengths)
-  const tweenedPct = useTween(summary.recovery_rate_pct)
+// Geometry for the flow diagram's SVG ribbons. Three source stages
+// (Failed at x=0, Contacted at x=1) fan out into 3 outcome stages at x=2.
+// Node vertical centers/heights are expressed as fractions of the SVG's
+// viewBox height so the whole thing scales cleanly at any width.
+// VB_W leaves ~185px of clear space to the right of the last column
+// specifically for the outcome labels ("Promise to Pay" is the longest,
+// ~130px at this font size + node width + gap) — labels are SVG <text>
+// elements laid out in viewBox coordinates, not HTML flow, so unlike a
+// CSS overflow they get hard-clipped at the SVG boundary if that space
+// isn't reserved up front rather than just wrapping.
+const VB_W = 980
+const VB_H = 260
+const COL_X = [70, 400, 700] // failed, contacted, outcomes column
+const NODE_W = 14
 
-  let cumulative = 0
-  const arcs = tweened.map((len, i) => {
-    const offset = cumulative
-    cumulative += len
-    return { ...SEGMENT_ORDER[i], len, offset }
+function ribbonPath(x1, y1top, y1bot, x2, y2top, y2bot) {
+  const midX = (x1 + x2) / 2
+  return [
+    `M ${x1} ${y1top}`,
+    `C ${midX} ${y1top}, ${midX} ${y2top}, ${x2} ${y2top}`,
+    `L ${x2} ${y2bot}`,
+    `C ${midX} ${y2bot}, ${midX} ${y1bot}, ${x1} ${y1bot}`,
+    'Z',
+  ].join(' ')
+}
+
+function FlowDiagram({ summary }) {
+  const total = summary.total_transactions || 1
+  const failed = summary.funnel?.failed ?? total
+  const contacted = summary.funnel?.contacted ?? total
+  const rawOutcomeCounts = OUTCOME_NODES.map((n) => summary.status_counts[n.key] || 0)
+  const inProgress = summary.status_counts.contacted || 0
+
+  // Everything expressed as a fraction of `total` so the tallest possible
+  // stack (the Failed column, always 100%) maps to a fixed pixel band —
+  // keeps the diagram's vertical scale stable even as counts change.
+  const bandTop = 30
+  const bandH = VB_H - 60
+  const scale = (n) => (n / total) * bandH
+
+  const failedTarget = [scale(failed)]
+  const contactedTarget = [scale(contacted)]
+  const outcomeTargets = [...rawOutcomeCounts, inProgress].map(scale)
+
+  const failedH = useTweenArray(failedTarget)[0]
+  const contactedH = useTweenArray(contactedTarget)[0]
+  const outcomeHs = useTweenArray(outcomeTargets)
+
+  // Stack the 3 outcome nodes + "in progress" vertically, centered as a
+  // group, with small gaps between them.
+  const gap = 10
+  const totalOutcomeH = outcomeHs.reduce((a, b) => a + b, 0) + gap * (outcomeHs.length - 1)
+  let outcomeY = bandTop + (bandH - totalOutcomeH) / 2
+  const outcomeYs = outcomeHs.map((h) => {
+    const y = outcomeY
+    outcomeY += h + gap
+    return { top: y, bot: y + h, h }
   })
 
-  // The needle-tip marker sits at the leading edge of the "recovered"
-  // segment — a small glowing dot that reads as a live indicator, not
-  // just a static ring, echoing the pulse-dot used elsewhere in the app.
-  const recoveredLen = tweened[0]
-  const tipAngle = 180 * (recoveredLen / ARC_LEN)
-  const tip = polarToXY(GAUGE_CX, GAUGE_CY, GAUGE_R, tipAngle)
+  const failedY = bandTop + (bandH - failedH) / 2
+  const contactedY = bandTop + (bandH - contactedH) / 2
+
+  const colors = ['#35d3a8', '#fbbf24', '#fb7185', '#7c93ff']
+  const labels = ['Recovered', 'Promise to Pay', 'Needs Human', 'In Progress']
+  const counts = [...rawOutcomeCounts, inProgress]
 
   return (
-    <div className="relative shrink-0" style={{ width: 260, height: 160 }}>
-      <svg width="260" height="160" viewBox="0 0 260 160">
+    <div className="w-full overflow-x-auto">
+      <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="w-full min-w-[610px]" style={{ height: 'auto' }}>
         <defs>
-          <filter id="gaugeGlow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
+          <filter id="flowGlow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
+          <linearGradient id="failedToContacted" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#64748b" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="#7c93ff" stopOpacity="0.55" />
+          </linearGradient>
+          {colors.map((c, i) => (
+            <linearGradient key={i} id={`toOutcome${i}`} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#7c93ff" stopOpacity="0.4" />
+              <stop offset="100%" stopColor={c} stopOpacity="0.55" />
+            </linearGradient>
+          ))}
         </defs>
-        {/* Track */}
+
+        {/* Ribbon: Failed -> Contacted (nearly all of it, in practice) */}
         <path
-          d={`M ${GAUGE_CX - GAUGE_R} ${GAUGE_CY} A ${GAUGE_R} ${GAUGE_R} 0 0 1 ${GAUGE_CX + GAUGE_R} ${GAUGE_CY}`}
-          fill="none"
-          stroke="rgba(255,255,255,0.06)"
-          strokeWidth="16"
-          strokeLinecap="round"
+          d={ribbonPath(
+            COL_X[0] + NODE_W, failedY, failedY + failedH,
+            COL_X[1], contactedY, contactedY + contactedH
+          )}
+          fill="url(#failedToContacted)"
         />
-        {/* Segments */}
-        {arcs.map((arc) =>
-          arc.len > 0.5 ? (
+
+        {/* Ribbons: Contacted -> each outcome node */}
+        {outcomeYs.map((o, i) =>
+          o.h > 0.5 ? (
             <path
-              key={arc.key}
-              d={`M ${GAUGE_CX - GAUGE_R} ${GAUGE_CY} A ${GAUGE_R} ${GAUGE_R} 0 0 1 ${GAUGE_CX + GAUGE_R} ${GAUGE_CY}`}
-              fill="none"
-              stroke={arc.color}
-              strokeWidth="16"
-              strokeLinecap="round"
-              strokeDasharray={`${arc.len} ${ARC_LEN * 2}`}
-              strokeDashoffset={-arc.offset}
-              filter="url(#gaugeGlow)"
-              opacity="0.95"
+              key={i}
+              d={ribbonPath(
+                COL_X[1] + NODE_W, contactedY, contactedY + contactedH,
+                COL_X[2], o.top, o.bot
+              )}
+              fill={`url(#toOutcome${i})`}
+              opacity={0.85}
             />
           ) : null
         )}
-        {/* Live indicator dot at the recovered/next-segment boundary */}
-        {recoveredLen > 0.5 && recoveredLen < ARC_LEN - 0.5 && (
-          <circle cx={tip.x} cy={tip.y} r="4.5" fill="#eafff8" filter="url(#gaugeGlow)" />
+
+        {/* Failed node */}
+        <rect x={COL_X[0]} y={failedY} width={NODE_W} height={Math.max(failedH, 2)} rx="4" fill="#94a3b8" filter="url(#flowGlow)" />
+        <text x={COL_X[0] - 12} y={failedY - 10} textAnchor="start" className="fill-slate-300" style={{ fontSize: 15, fontWeight: 700, fontFamily: 'inherit' }}>
+          {failed}
+        </text>
+        <text x={COL_X[0] - 12} y={failedY + failedH + 22} textAnchor="start" className="fill-slate-500" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', fontFamily: 'inherit' }}>
+          FAILED
+        </text>
+
+        {/* Contacted node */}
+        <rect x={COL_X[1]} y={contactedY} width={NODE_W} height={Math.max(contactedH, 2)} rx="4" fill="#7c93ff" filter="url(#flowGlow)" />
+        <text x={COL_X[1] + NODE_W / 2} y={contactedY - 10} textAnchor="middle" className="fill-slate-300" style={{ fontSize: 15, fontWeight: 700, fontFamily: 'inherit' }}>
+          {contacted}
+        </text>
+        <text x={COL_X[1] + NODE_W / 2} y={contactedY + contactedH + 22} textAnchor="middle" className="fill-slate-500" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', fontFamily: 'inherit' }}>
+          CONTACTED
+        </text>
+
+        {/* Outcome nodes */}
+        {outcomeYs.map((o, i) =>
+          o.h > 0.5 ? (
+            <g key={i}>
+              <rect x={COL_X[2]} y={o.top} width={NODE_W} height={o.h} rx="4" fill={colors[i]} filter="url(#flowGlow)" />
+              <text x={COL_X[2] + NODE_W + 14} y={o.top + o.h / 2 - 4} textAnchor="start" className="fill-white" style={{ fontSize: 16, fontWeight: 800, fontFamily: 'inherit' }}>
+                {counts[i]}
+              </text>
+              <text x={COL_X[2] + NODE_W + 14} y={o.top + o.h / 2 + 14} textAnchor="start" style={{ fontSize: 11.5, fontWeight: 600, fontFamily: 'inherit', fill: colors[i] }}>
+                {labels[i]}
+              </text>
+            </g>
+          ) : null
         )}
       </svg>
-      <div className="absolute inset-x-0 bottom-2 flex flex-col items-center">
-        <div className="font-display text-[2.75rem] leading-none font-extrabold text-white tracking-tight">
-          {tweenedPct.toFixed(1)}
-          <span className="text-2xl align-top ml-0.5 text-slate-400">%</span>
-        </div>
-        <div className="text-[10px] font-semibold text-teal-300/90 uppercase tracking-[0.2em] mt-1.5">
-          Recovered
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function LegendChip({ segment, count, pct }) {
-  return (
-    <div
-      className="relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 bg-white/[0.03] ring-1 ring-white/[0.06] overflow-hidden transition-colors hover:bg-white/[0.05]"
-    >
-      <span
-        className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl"
-        style={{ backgroundColor: segment.color, boxShadow: `0 0 8px ${segment.glow}` }}
-      />
-      <span
-        className="h-2 w-2 rounded-full shrink-0 ml-1"
-        style={{ backgroundColor: segment.color, boxShadow: `0 0 6px ${segment.glow}` }}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
-          <span className="font-display text-lg font-bold text-white leading-none">{count}</span>
-          <span className="text-[11px] text-slate-500 font-medium">{pct}%</span>
-        </div>
-        <div className="text-[11px] text-slate-400 leading-tight mt-0.5 truncate">{segment.label}</div>
-      </div>
     </div>
   )
 }
@@ -203,7 +241,7 @@ function CauseBars({ byCause }) {
   const tweened = useTweenArray(targets)
 
   return (
-    <div className="space-y-3">
+    <div className="grid sm:grid-cols-2 gap-x-8 gap-y-3.5">
       {causes.map((cause, i) => {
         const pct = tweened[i] ?? targets[i]
         const tone =
@@ -237,14 +275,10 @@ function CauseBars({ byCause }) {
 
 export default function OutcomeVisual({ summary, byCause }) {
   if (!summary) return null
-  const total = summary.total_transactions || 1
+  const recoveredPct = useTween(summary.recovery_rate_pct)
 
   return (
     <div className="relative rounded-2xl overflow-hidden shadow-2xl shadow-black/40">
-      {/* Layered glass background — a touch deeper/darker than the standard
-          .panel utility, with two soft ambient glows anchored to opposite
-          corners (mirroring app-backdrop's language at panel scale) plus a
-          faint top hairline to catch light like a real glass edge. */}
       <div
         className="absolute inset-0"
         style={{
@@ -264,46 +298,39 @@ export default function OutcomeVisual({ summary, byCause }) {
       />
 
       <div className="relative px-6 sm:px-8 py-7">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <div className="flex items-center gap-2.5">
             <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-teal-400" />
             </span>
             <div className="text-[11px] font-bold text-slate-300 uppercase tracking-[0.15em]">
-              Outcomes at a glance
+              Where every failed payment goes
             </div>
           </div>
-          <SyntheticDataBadge />
-        </div>
-
-        <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
-          <div className="flex flex-col items-center shrink-0">
-            <Gauge summary={summary} />
-            <div className="text-[11px] text-slate-500 mt-1 tracking-wide">
-              of <span className="text-slate-300 font-semibold">{total}</span> failed payments
+          <div className="flex items-center gap-3">
+            <div className="text-sm">
+              <span className="font-display font-extrabold text-white text-lg tracking-tight">
+                {recoveredPct.toFixed(1)}%
+              </span>
+              <span className="text-slate-500 ml-1.5">recovered overall</span>
             </div>
-          </div>
-
-          <div className="flex-1 w-full min-w-0">
-            <div className="grid grid-cols-2 gap-2.5">
-              {SEGMENT_ORDER.map((s) => {
-                const count = summary.status_counts[s.key] || 0
-                const pct = total ? ((count / total) * 100).toFixed(1) : '0.0'
-                return <LegendChip key={s.key} segment={s} count={count} pct={pct} />
-              })}
-            </div>
-
-            {byCause && (
-              <div className="mt-6 pt-6 border-t border-white/[0.07]">
-                <div className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.15em] mb-3.5">
-                  Recovery rate by cause
-                </div>
-                <CauseBars byCause={byCause} />
-              </div>
-            )}
+            <SyntheticDataBadge />
           </div>
         </div>
+
+        <div className="mt-4">
+          <FlowDiagram summary={summary} />
+        </div>
+
+        {byCause && (
+          <div className="mt-4 pt-6 border-t border-white/[0.07]">
+            <div className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.15em] mb-3.5">
+              Recovery rate by cause
+            </div>
+            <CauseBars byCause={byCause} />
+          </div>
+        )}
       </div>
     </div>
   )
