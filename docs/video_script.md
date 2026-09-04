@@ -1,9 +1,15 @@
-# Video Script — AI Revenue Recovery (4:00–4:30)
+# Video Script — AI Revenue Recovery (Target: 5:00)
+
+**Razorpay AI Buildathon requires a 5-minute pitch video** — this script is timed to
+land there. If you're short on time before the deadline, this version is ready to
+record as-is; the [Delivery notes](#delivery-notes) at the bottom tell you exactly
+what to cut if you run long, and what to NEVER cut if you're worried about running
+short.
 
 **How to use this:** left column = what's on screen, right column = what you say.
 Timestamps are targets, not hard cuts — pace to feel natural, not rushed. Practice
-reading it out loud 2-3 times before recording; you'll naturally trim ~10-15% once
-you're not reading cold, which lands you right in the 4:00-4:30 window.
+reading it out loud once if you have 5 minutes to spare; if not, just record — a
+slightly imperfect first take beats a polished one that misses the deadline.
 
 Live URL to have open and ready: **https://payment-recovery-ai.onrender.com**
 ⚠️ Visit it ~2 minutes before you start recording so the free-tier instance is
@@ -46,17 +52,26 @@ recording. If a step takes a few seconds (Gemini call), let it breathe, don't ru
 
 ---
 
-## [2:30–3:15] Proof it's not just theater
+## [2:30–3:20] Proof it's not just theater
 
 | Screen | Say |
 |---|---|
 | Scroll to System Guarantees panel | "Everything I just said is checkable, not just claimed. Zero of these decisions were made by the LLM — that number is computed live from the audit log. Every single message, decision, and escalation is written to a database row in the same commit as the action it explains." |
-| (Optional, if time allows) briefly mention the real webhook | "There's also a real cryptographically-signed Razorpay webhook behind this — HMAC verified, replay-protected, tamper-protected — I didn't demo it live today because that needs a public tunnel running during judging, but it's fully tested end to end, and it's documented." |
+| Briefly mention the real webhook | "There's also a real, cryptographically-signed Razorpay webhook behind this — HMAC-SHA256 verified, replay-protected, tamper-protected, exactly matching Razorpay's own documented scheme. I didn't demo it live today because that needs a public tunnel running during judging — a fragile dependency I didn't want to risk — but it's fully tested end to end against the live server: valid payloads accepted, tampered payloads rejected, replayed events correctly ignored." |
 | Scroll to Revenue Impact panel | "And because a percentage doesn't mean much to a business owner — here's the same result in rupees. ₹5.13 lakh recovered out of ₹7 lakh that failed. Without this pipeline, that's zero, by definition — that's literally what 'no recovery system' means." |
 
 ---
 
-## [3:15–3:50] The honesty angle — say the quiet part
+## [3:20–4:00] It's not just running on my laptop
+
+| Screen | Say |
+|---|---|
+| Show the URL bar / mention the deployment | "This whole thing is deployed — you're watching it live on the actual internet right now, not localhost. One backend process serves both the API and this dashboard. While building that, I actually found and fixed a real production bug — my rate limiter was silently broken because of a multi-process config issue. I caught it by stress-testing my own deployment before anyone else could, and fixed it the same day." |
+| (Quick cut) Regulatory section, if time allows | "I also looked at what this would actually need in production — DND and consent rules, WhatsApp template approval, RBI's expectations around bounded, auditable recovery contact. I didn't fake compliance I haven't built — I documented exactly which three database columns and one middleware check stand between this and a real rollout." |
+
+---
+
+## [4:00–4:35] The honesty angle — say the quiet part
 
 | Screen | Say |
 |---|---|
@@ -64,7 +79,7 @@ recording. If a step takes a few seconds (Gemini call), let it breathe, don't ru
 
 ---
 
-## [3:50–4:15] Close
+## [4:35–5:00] Close
 
 | Screen | Say |
 |---|---|
@@ -86,6 +101,15 @@ recording. If a step takes a few seconds (Gemini call), let it breathe, don't ru
 - **Have a backup plan for the confidence-escalation demo**: if you're worried about
   typing something convincingly vague live, pre-decide your input beforehand (e.g.
   "payment didn't go through, not sure why") so you're not stalling on-camera.
-- **Cut for time first from**: the webhook mention (optional line, marked above) and
-  the "How it works" 4-step walkthrough (can be tightened to 2 sentences) — not from
-  the live demo or the honesty section, those are your differentiators.
+- **If you're running long, cut in this order**: (1) the regulatory/compliance quick
+  cut in the [3:20–4:00] section — it's marked "if time allows" for a reason, (2) tighten
+  the "How it works" 4-step walkthrough to 2 sentences, (3) shorten the webhook mention
+  to one sentence ("there's also a real signature-verified webhook, fully tested,
+  documented in the repo"). Never cut the live demo or the honesty section — those are
+  what actually differentiate this from a slide deck with a demo bolted on.
+- **If you're running short**, the deployment/production-bug story in [3:20–4:00] is
+  genuinely true and worth telling in more detail if you have room — judges respond well
+  to "I found a real bug in my own live system and fixed it," it's a rare, credible signal.
+- **5 minutes is the buildathon's stated video length** (razorpay.com/buildathon) —
+  don't pad it artificially if you naturally land at 4:30; a slightly-under, well-paced
+  video beats a padded one. But don't go far under either — use the time you're given.
