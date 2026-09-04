@@ -52,22 +52,31 @@ recording. If a step takes a few seconds (Gemini call), let it breathe, don't ru
 
 ---
 
-## [2:30–3:20] Proof it's not just theater
+## [2:30–2:55] Story Mode + Refresh
+
+| Screen | Say |
+|---|---|
+| Click "▶ Story mode" in the header | "There's also a guided walkthrough built into the dashboard, in case anyone wants to explore this themselves." |
+| Let it spotlight 2-3 steps, click Next once or twice | "It highlights the real panels in order — the rule table, the confidence safety net, the audit trail — narrating what's actually on screen, not a script." |
+| Exit Story Mode, click "Refresh" | "And Refresh isn't just re-reading the database — it fires 2 to 3 real new transactions through the same live pipeline first. Watch the numbers actually move." |
+
+---
+
+## [2:55–3:35] Proof it's not just theater
 
 | Screen | Say |
 |---|---|
 | Scroll to System Guarantees panel | "Everything I just said is checkable, not just claimed. Zero of these decisions were made by the LLM — that number is computed live from the audit log. Every single message, decision, and escalation is written to a database row in the same commit as the action it explains." |
-| Briefly mention the real webhook | "There's also a real, cryptographically-signed Razorpay webhook behind this — HMAC-SHA256 verified, replay-protected, tamper-protected, exactly matching Razorpay's own documented scheme. I didn't demo it live today because that needs a public tunnel running during judging — a fragile dependency I didn't want to risk — but it's fully tested end to end against the live server: valid payloads accepted, tampered payloads rejected, replayed events correctly ignored." |
-| Scroll to Revenue Impact panel | "And because a percentage doesn't mean much to a business owner — here's the same result in rupees. ₹5.13 lakh recovered out of ₹7 lakh that failed. Without this pipeline, that's zero, by definition — that's literally what 'no recovery system' means." |
+| Briefly mention the real webhook | "There's also a real, cryptographically-signed Razorpay webhook behind this — HMAC-SHA256 verified, tamper-protected. I didn't demo it live today since that needs a public tunnel during judging, but it's fully tested end to end against the live server." |
+| Scroll to Revenue Impact panel | "And because a percentage doesn't mean much to a business owner — here's the same result in rupees. ₹5.13 lakh recovered out of ₹7 lakh that failed. Without this pipeline, that's zero, by definition." |
 
 ---
 
-## [3:20–4:00] It's not just running on my laptop
+## [3:35–4:00] It's actually deployed
 
 | Screen | Say |
 |---|---|
-| Show the URL bar / mention the deployment | "This whole thing is deployed — you're watching it live on the actual internet right now, not localhost. One backend process serves both the API and this dashboard. While building that, I actually found and fixed a real production bug — my rate limiter was silently broken because of a multi-process config issue. I caught it by stress-testing my own deployment before anyone else could, and fixed it the same day." |
-| (Quick cut) Regulatory section, if time allows | "I also looked at what this would actually need in production — DND and consent rules, WhatsApp template approval, RBI's expectations around bounded, auditable recovery contact. I didn't fake compliance I haven't built — I documented exactly which three database columns and one middleware check stand between this and a real rollout." |
+| Show the URL bar / mention the deployment | "This whole thing is deployed — you're watching it on the actual internet, not localhost. While building that, I found and fixed a real production bug — my rate limiter was silently broken from a multi-process config issue. I caught it by stress-testing my own deployment before anyone else could." |
 
 ---
 
