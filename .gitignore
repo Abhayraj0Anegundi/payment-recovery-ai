@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 node_modules/
 .claude/
+video_script.md
+video_script.pdf
